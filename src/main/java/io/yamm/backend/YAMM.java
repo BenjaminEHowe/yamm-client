@@ -11,14 +11,14 @@ public class YAMM {
 
         // see http://www.mkyong.com/java/java-properties-file-examples
         Properties prop = new Properties();
-        String dataDirectory = null;
+        String dataFolder = null;
         if (new File("config.properties").exists()) {
             // load existing config
             InputStream input = null;
             try {
                 input = new FileInputStream("config.properties");
                 prop.load(input);
-                dataDirectory = prop.getProperty("dataDirectory");
+                dataFolder = prop.getProperty("dataFolder");
             } catch (IOException e) {
                 e.printStackTrace();
             } finally {
@@ -31,24 +31,24 @@ public class YAMM {
                 }
             }
         }
-        if (dataDirectory == null) {
+        if (dataFolder == null) {
             // if no directory is specified, ask the user for one
             ui.showWarning(
                     "Data not found!",
                     "No data folder was found. Please select a folder to store YAMM data in.");
             try {
-                dataDirectory = ui.requestFolder();
+                dataFolder = ui.requestFolder();
             } catch (NullPointerException e) {
                 ui.showError("No folder selected! YAMM will now quit.");
                 ui.quit();
             }
         }
-        ui.showMessage("Data folder", "Data folder is " + dataDirectory);
+        ui.showMessage("Data folder", "Data folder is " + dataFolder);
         // write new config
         OutputStream output = null;
         try {
             output = new FileOutputStream("config.properties");
-            prop.setProperty("dataDirectory", dataDirectory);
+            prop.setProperty("dataFolder", dataFolder);
             prop.store(output, null);
         } catch (IOException e) {
             e.printStackTrace();
