@@ -13,6 +13,9 @@ public class GUI implements Interface,Runnable {
     // sample from the Oracle tutorials:
     // https://docs.oracle.com/javase/tutorial/uiswing/misc/systemtray.html
 
+    private SystemTray tray;
+    private TrayIcon trayIcon;
+
     public static void main(String[] args) {
         GUI gui = new GUI();
         // try to set an appropriate look and feel for the system
@@ -31,8 +34,7 @@ public class GUI implements Interface,Runnable {
     public void run() {
         // check for SystemTray support
         if (!SystemTray.isSupported()) {
-            JOptionPane.showMessageDialog(null,
-                    "SystemTray is not supported", "Error", JOptionPane.ERROR_MESSAGE);
+            showError("SystemTray is not supported!");
             return;
         }
 
@@ -43,14 +45,13 @@ public class GUI implements Interface,Runnable {
         try {
             trayIconImage = ImageIO.read(GUI.class.getResource("/images/icon.png"));
         } catch (IOException e) {
-            JOptionPane.showMessageDialog(null,
-                    "Could not read icon graphic", "Error", JOptionPane.ERROR_MESSAGE);
+            showError("Could not read icon graphic!");
             return;
         }
         int trayIconWidth = new TrayIcon(trayIconImage).getSize().width;
-        final TrayIcon trayIcon = new TrayIcon(trayIconImage.getScaledInstance(trayIconWidth, -1, Image.SCALE_SMOOTH));
+        trayIcon = new TrayIcon(trayIconImage.getScaledInstance(trayIconWidth, -1, Image.SCALE_SMOOTH));
         trayIcon.setToolTip("YAMM: Yet Another Money Manager");
-        final SystemTray tray = SystemTray.getSystemTray();
+        tray = SystemTray.getSystemTray();
 
         // create popup menu components
         MenuItem aboutItem = new MenuItem("About");
@@ -76,8 +77,7 @@ public class GUI implements Interface,Runnable {
         try {
             tray.add(trayIcon);
         } catch (AWTException e) {
-            JOptionPane.showMessageDialog(null,
-                    "TrayIcon could not be added.", "Error", JOptionPane.ERROR_MESSAGE);
+            showError("TrayIcon could not be added!");
             return;
         }
 
@@ -117,16 +117,55 @@ public class GUI implements Interface,Runnable {
         noneItem.addActionListener(listener);
 
         exitItem.addActionListener(e -> {
-            tray.remove(trayIcon);
-            System.exit(0);
+            quit();
         });
     }
 
-    public String requestDirectory() {
+    public void quit() {
+        tray.remove(trayIcon);
+        System.exit(0);
+    }
+
+    public String requestFolder() throws NullPointerException {
         JFileChooser f = new JFileChooser();
         f.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        f.showSaveDialog(null);
-
+        f.showDialog(null, "Select Folder");
         return f.getSelectedFile().toString();
+    }
+
+    public void showError(String message) {
+        showError("Error", message);
+    }
+
+    public void showError(String title, String message) {
+        JOptionPane.showMessageDialog(
+                null,
+                "<html><p style='width:240px'>" + message + "</p></html>",
+                title,
+                JOptionPane.ERROR_MESSAGE);
+    }
+
+    public void showMessage(String message) {
+        showMessage("Information", message);
+    }
+
+    public void showMessage(String title, String message) {
+        JOptionPane.showMessageDialog(
+                null,
+                "<html><p style='width:240px'>" + message + "</p></html>",
+                title,
+                JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    public void showWarning(String message) {
+        showWarning("Warning", message);
+    }
+
+    public void showWarning(String title, String message) {
+        JOptionPane.showMessageDialog(
+                null,
+                "<html><p style='width:240px'>" + message + "</p></html>",
+                title,
+                JOptionPane.WARNING_MESSAGE);
     }
 }
