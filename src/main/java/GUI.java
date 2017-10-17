@@ -1,8 +1,9 @@
+import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionListener;
-import java.awt.event.ItemEvent;
-import java.net.URL;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
 
 public class GUI {
 
@@ -16,8 +17,8 @@ public class GUI {
         } catch (UnsupportedLookAndFeelException|
                     IllegalAccessException|
                     InstantiationException|
-                    ClassNotFoundException ex) {
-            ex.printStackTrace();
+                    ClassNotFoundException e) {
+            e.printStackTrace();
         }
         SwingUtilities.invokeLater(GUI::createAndShowGUI);
     }
@@ -25,18 +26,28 @@ public class GUI {
     private static void createAndShowGUI() {
         // check for SystemTray support
         if (!SystemTray.isSupported()) {
-            System.out.println("SystemTray is not supported");
+            System.err.println("SystemTray is not supported.");
             return;
         }
-        final PopupMenu popup = new PopupMenu();
-        @SuppressWarnings("ConstantConditions")
-        final TrayIcon trayIcon = new TrayIcon(createImage("images/icon.png", "tray icon"));
-        trayIcon.setImageAutoSize(true);
+
+        // create system tray icon
+        // see https://stackoverflow.com/a/12287388 for resize code
+        // transparency doesn't work on linux: http://bugs.java.com/bugdatabase/view_bug.do?bug_id=6453521
+        BufferedImage trayIconImage;
+        try {
+            trayIconImage = ImageIO.read(GUI.class.getResource("images/icon.png"));
+        } catch (IOException e) {
+            System.err.println("Could not read icon graphic.");
+            e.printStackTrace();
+            return;
+        }
+        int trayIconWidth = new TrayIcon(trayIconImage).getSize().width;
+        final TrayIcon trayIcon = new TrayIcon(trayIconImage.getScaledInstance(trayIconWidth, -1, Image.SCALE_SMOOTH));
+        trayIcon.setToolTip("YAMM: Yet Another Money Manager");
         final SystemTray tray = SystemTray.getSystemTray();
 
         // create popup menu components
         MenuItem aboutItem = new MenuItem("About");
-        CheckboxMenuItem cb2 = new CheckboxMenuItem("Set tooltip");
         Menu displayMenu = new Menu("Display");
         MenuItem errorItem = new MenuItem("Error");
         MenuItem warningItem = new MenuItem("Warning");
@@ -45,10 +56,8 @@ public class GUI {
         MenuItem exitItem = new MenuItem("Exit");
 
         // add components to popup menu
+        final PopupMenu popup = new PopupMenu();
         popup.add(aboutItem);
-        popup.addSeparator();
-        popup.add(cb2);
-        popup.addSeparator();
         popup.add(displayMenu);
         displayMenu.add(errorItem);
         displayMenu.add(warningItem);
@@ -61,7 +70,7 @@ public class GUI {
         try {
             tray.add(trayIcon);
         } catch (AWTException e) {
-            System.out.println("TrayIcon could not be added.");
+            System.err.println("TrayIcon could not be added.");
             return;
         }
 
@@ -70,15 +79,6 @@ public class GUI {
 
         aboutItem.addActionListener(e -> JOptionPane.showMessageDialog(null,
                 "This dialog box is run from the About menu item"));
-
-        cb2.addItemListener(e -> {
-            int cb2Id = e.getStateChange();
-            if (cb2Id == ItemEvent.SELECTED){
-                trayIcon.setToolTip("Sun TrayIcon");
-            } else {
-                trayIcon.setToolTip(null);
-            }
-        });
 
         ActionListener listener = e -> {
             MenuItem item = (MenuItem)e.getSource();
@@ -115,17 +115,5 @@ public class GUI {
             tray.remove(trayIcon);
             System.exit(0);
         });
-    }
-
-    @SuppressWarnings("SameParameterValue")
-    private static Image createImage(String path, String description) {
-        URL imageURL = GUI.class.getResource(path);
-
-        if (imageURL == null) {
-            System.err.println("Resource not found: " + path);
-            return null;
-        } else {
-            return (new ImageIcon(imageURL, description)).getImage();
-        }
     }
 }
