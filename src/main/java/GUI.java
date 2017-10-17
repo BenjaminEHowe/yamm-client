@@ -1,3 +1,6 @@
+import io.yamm.backend.Interface;
+import io.yamm.backend.YAMM;
+
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
@@ -5,12 +8,13 @@ import java.awt.event.ActionListener;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 
-public class GUI {
+public class GUI implements Interface,Runnable {
 
     // sample from the Oracle tutorials:
     // https://docs.oracle.com/javase/tutorial/uiswing/misc/systemtray.html
 
     public static void main(String[] args) {
+        GUI gui = new GUI();
         // try to set an appropriate look and feel for the system
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
@@ -20,13 +24,15 @@ public class GUI {
                     ClassNotFoundException e) {
             e.printStackTrace();
         }
-        SwingUtilities.invokeLater(GUI::createAndShowGUI);
+        SwingUtilities.invokeLater(gui);
+        new YAMM(gui);
     }
 
-    private static void createAndShowGUI() {
+    public void run() {
         // check for SystemTray support
         if (!SystemTray.isSupported()) {
-            System.err.println("SystemTray is not supported.");
+            JOptionPane.showMessageDialog(null,
+                    "SystemTray is not supported", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
@@ -35,10 +41,10 @@ public class GUI {
         // transparency doesn't work on linux: http://bugs.java.com/bugdatabase/view_bug.do?bug_id=6453521
         BufferedImage trayIconImage;
         try {
-            trayIconImage = ImageIO.read(GUI.class.getResource("images/icon.png"));
+            trayIconImage = ImageIO.read(GUI.class.getResource("/images/icon.png"));
         } catch (IOException e) {
-            System.err.println("Could not read icon graphic.");
-            e.printStackTrace();
+            JOptionPane.showMessageDialog(null,
+                    "Could not read icon graphic", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
         int trayIconWidth = new TrayIcon(trayIconImage).getSize().width;
@@ -64,13 +70,14 @@ public class GUI {
         displayMenu.add(infoItem);
         displayMenu.add(noneItem);
         popup.add(exitItem);
-
         trayIcon.setPopupMenu(popup);
 
+        // try to add the icon to the tray
         try {
             tray.add(trayIcon);
         } catch (AWTException e) {
-            System.err.println("TrayIcon could not be added.");
+            JOptionPane.showMessageDialog(null,
+                    "TrayIcon could not be added.", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
@@ -82,8 +89,6 @@ public class GUI {
 
         ActionListener listener = e -> {
             MenuItem item = (MenuItem)e.getSource();
-            //TrayIcon.MessageType type = null;
-            System.out.println(item.getLabel());
             if ("Error".equals(item.getLabel())) {
                 //type = TrayIcon.MessageType.ERROR;
                 trayIcon.displayMessage("Sun TrayIcon Demo",
@@ -115,5 +120,13 @@ public class GUI {
             tray.remove(trayIcon);
             System.exit(0);
         });
+    }
+
+    public String requestDirectory() {
+        JFileChooser f = new JFileChooser();
+        f.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        f.showSaveDialog(null);
+
+        return f.getSelectedFile().toString();
     }
 }
