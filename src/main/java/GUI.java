@@ -13,11 +13,13 @@ public class GUI implements Interface,Runnable {
     // sample from the Oracle tutorials:
     // https://docs.oracle.com/javase/tutorial/uiswing/misc/systemtray.html
 
+    private static GUI gui;
     private SystemTray tray;
     private TrayIcon trayIcon;
+    private YAMM yamm;
 
     public static void main(String[] args) {
-        GUI gui = new GUI();
+        gui = new GUI();
         // try to set an appropriate look and feel for the system
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
@@ -28,7 +30,6 @@ public class GUI implements Interface,Runnable {
             e.printStackTrace();
         }
         SwingUtilities.invokeLater(gui);
-        new YAMM(gui);
     }
 
     public void run() {
@@ -81,6 +82,10 @@ public class GUI implements Interface,Runnable {
             return;
         }
 
+        // launch the YAMM logic
+        yamm = new YAMM(gui);
+
+        // listeners etc.
         trayIcon.addActionListener(e -> JOptionPane.showMessageDialog(null,
                 "This dialog box is run from System Tray"));
 
@@ -116,9 +121,7 @@ public class GUI implements Interface,Runnable {
         infoItem.addActionListener(listener);
         noneItem.addActionListener(listener);
 
-        exitItem.addActionListener(e -> {
-            quit();
-        });
+        exitItem.addActionListener(e -> yamm.quit());
     }
 
     public void quit() {
@@ -131,6 +134,10 @@ public class GUI implements Interface,Runnable {
         f.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         f.showDialog(null, "Select Folder");
         return f.getSelectedFile().toString();
+    }
+
+    public String requestString(String message) {
+        return JOptionPane.showInputDialog("<html><p style='width:240px'>" + message + "</p></html>");
     }
 
     public void showError(String message) {
