@@ -1,12 +1,15 @@
 package io.yamm.backend;
 
+import io.yamm.utils.Webserver;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.jasypt.encryption.pbe.StandardPBEStringEncryptor;
 import org.jasypt.exceptions.EncryptionOperationNotPossibleException;
 
 import java.io.*;
+import java.security.SecureRandom;
 import java.security.Security;
 import java.util.Properties;
+import java.util.Random;
 
 public class YAMM {
     private String dataFolder = null;
@@ -126,7 +129,21 @@ public class YAMM {
             }
             ui.showMessage("cryptoTest file saved.");
         }
-        saveProperties();
+
+        // generate session ID
+        Random random = new SecureRandom();
+        String symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        char[] buffer = new char[24];
+        for (int i = 0; i < buffer.length; ++i)
+            buffer[i] = symbols.charAt(random.nextInt(symbols.length()));
+        ui.showMessage("Session ID: " + new String(buffer));
+
+        // start web server
+        try {
+            new Webserver(this);
+        } catch (IOException e) {
+            ui.showError("Couldn't start server:\n" + e);
+        }
     }
 
     private void saveProperties() {
