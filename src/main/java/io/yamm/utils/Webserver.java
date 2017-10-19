@@ -1,9 +1,13 @@
 package io.yamm.utils;
 
+import com.mashape.unirest.http.Unirest;
+import com.mashape.unirest.http.exceptions.UnirestException;
 import fi.iki.elonen.NanoHTTPD;
 import io.yamm.backend.YAMM;
 
 import java.io.IOException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Webserver extends NanoHTTPD {
 
@@ -22,6 +26,23 @@ public class Webserver extends NanoHTTPD {
         message += "<p>URI: " + session.getUri() + "</p>\n";
         message += "<p>Parameters: " + session.getParameters().toString() + "</p>\n";
         message += "<p>Method: " + session.getMethod().toString() + "</p>\n";
+        // get BBC News headline to demonstrate Unirest
+        String headline;
+        try {
+            String response = Unirest.get("http://feeds.bbci.co.uk/news/rss.xml").asString().getBody();
+            String pattern = ".*?<item>.*?<title><!\\[CDATA\\[(.*?)]]></title>.*";
+            Pattern r = Pattern.compile(pattern, Pattern.DOTALL);
+            Matcher m = r.matcher(response);
+            if (m.find()) {
+                headline = m.group(1);
+            } else {
+                headline = "Not found";
+            }
+        } catch (UnirestException e) {
+            e.printStackTrace();
+            headline = "Unavailable";
+        }
+        message += "<p>Top BBC News Headline: " + headline + "</p>\n";
         message += "</html>";
         return newFixedLengthResponse(message);
     }
