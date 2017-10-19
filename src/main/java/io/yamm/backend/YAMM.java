@@ -31,13 +31,13 @@ public class YAMM {
                 prop.load(input);
                 dataFolder = prop.getProperty("dataFolder");
             } catch (IOException e) {
-                e.printStackTrace();
+                ui.showException(e);
             } finally {
                 if (input != null) {
                     try {
                         input.close();
                     } catch (IOException e) {
-                        e.printStackTrace();
+                        ui.showException(e);
                     }
                 }
             }
@@ -108,7 +108,7 @@ public class YAMM {
                 encryptedString = reader.readLine();
                 reader.close();
             } catch (IOException e) {
-                e.printStackTrace();
+                ui.showException(e);
             }
             try {
                 String decryptedString = encryptor.decrypt(encryptedString);
@@ -125,7 +125,7 @@ public class YAMM {
                 writer.write(encryptedString);
                 writer.close();
             } catch (IOException e) {
-                e.printStackTrace();
+                ui.showException(e);
             }
             ui.showMessage("cryptoTest file saved.");
         }
@@ -140,7 +140,7 @@ public class YAMM {
 
         // start web server
         try {
-            new Webserver(this);
+            new Webserver(ui,this);
         } catch (IOException e) {
             ui.showError("Couldn't start server:\n" + e);
         }
@@ -153,13 +153,13 @@ public class YAMM {
             prop.setProperty("dataFolder", dataFolder);
             prop.store(output, null);
         } catch (IOException e) {
-            e.printStackTrace();
+            ui.showException(e);
         } finally {
             if (output != null) {
                 try {
                     output.close();
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    ui.showException(e);
                 }
             }
         }

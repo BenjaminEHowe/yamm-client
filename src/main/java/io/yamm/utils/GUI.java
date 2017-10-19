@@ -6,9 +6,10 @@ import io.yamm.backend.YAMM;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ActionListener;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 
 public class GUI implements Interface,Runnable {
 
@@ -29,7 +30,7 @@ public class GUI implements Interface,Runnable {
                     IllegalAccessException|
                     InstantiationException|
                     ClassNotFoundException e) {
-            e.printStackTrace();
+            gui.showException(e);
         }
         SwingUtilities.invokeLater(gui);
     }
@@ -58,21 +59,13 @@ public class GUI implements Interface,Runnable {
 
         // create popup menu components
         MenuItem aboutItem = new MenuItem("About");
-        Menu displayMenu = new Menu("Display");
-        MenuItem errorItem = new MenuItem("Error");
-        MenuItem warningItem = new MenuItem("Warning");
-        MenuItem infoItem = new MenuItem("Info");
-        MenuItem noneItem = new MenuItem("None");
+        MenuItem FAQItem = new MenuItem("FAQ");
         MenuItem exitItem = new MenuItem("Exit");
 
         // add components to popup menu
         final PopupMenu popup = new PopupMenu();
         popup.add(aboutItem);
-        popup.add(displayMenu);
-        displayMenu.add(errorItem);
-        displayMenu.add(warningItem);
-        displayMenu.add(infoItem);
-        displayMenu.add(noneItem);
+        popup.add(FAQItem);
         popup.add(exitItem);
         trayIcon.setPopupMenu(popup);
 
@@ -94,34 +87,13 @@ public class GUI implements Interface,Runnable {
         aboutItem.addActionListener(e -> JOptionPane.showMessageDialog(null,
                 "This dialog box is run from the About menu item"));
 
-        ActionListener listener = e -> {
-            MenuItem item = (MenuItem)e.getSource();
-            if ("Error".equals(item.getLabel())) {
-                //type = TrayIcon.MessageType.ERROR;
-                trayIcon.displayMessage("Sun TrayIcon Demo",
-                        "This is an error message", TrayIcon.MessageType.ERROR);
-
-            } else if ("Warning".equals(item.getLabel())) {
-                //type = TrayIcon.MessageType.WARNING;
-                trayIcon.displayMessage("Sun TrayIcon Demo",
-                        "This is a warning message", TrayIcon.MessageType.WARNING);
-
-            } else if ("Info".equals(item.getLabel())) {
-                //type = TrayIcon.MessageType.INFO;
-                trayIcon.displayMessage("Sun TrayIcon Demo",
-                        "This is an info message", TrayIcon.MessageType.INFO);
-
-            } else if ("None".equals(item.getLabel())) {
-                //type = TrayIcon.MessageType.NONE;
-                trayIcon.displayMessage("Sun TrayIcon Demo",
-                        "This is an ordinary message", TrayIcon.MessageType.NONE);
+        FAQItem.addActionListener(e -> {
+            try {
+                Desktop.getDesktop().browse(java.net.URI.create("https://yamm.io/faq"));
+            } catch (IOException ex) {
+                showException(ex);
             }
-        };
-
-        errorItem.addActionListener(listener);
-        warningItem.addActionListener(listener);
-        infoItem.addActionListener(listener);
-        noneItem.addActionListener(listener);
+        });
 
         exitItem.addActionListener(e -> yamm.quit());
     }
@@ -152,6 +124,23 @@ public class GUI implements Interface,Runnable {
                 "<html><p style='width:240px'>" + message + "</p></html>",
                 title,
                 JOptionPane.ERROR_MESSAGE);
+    }
+
+    public void showException(Exception e) {
+        // source: https://www.javalobby.org//java/forums/t19012.html
+        // create and configure a text area - fill it with exception text.
+        final JTextArea textArea = new JTextArea();
+        textArea.setEditable(false);
+        StringWriter writer = new StringWriter();
+        e.printStackTrace(new PrintWriter(writer));
+        textArea.setText(writer.toString());
+
+        // stuff it in a scrollpane with a controlled size.
+        JScrollPane scrollPane = new JScrollPane(textArea);
+        scrollPane.setPreferredSize(new Dimension(480, 360));
+
+        // pass the scrollpane to the joptionpane.
+        JOptionPane.showMessageDialog(null, scrollPane, "Exception!", JOptionPane.ERROR_MESSAGE);
     }
 
     public void showMessage(String message) {
