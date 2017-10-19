@@ -15,14 +15,16 @@ public class YAMM {
     private String dataFolder = null;
     private StandardPBEStringEncryptor encryptor;
     private Properties prop;
+    private Random random;
     private final Interface ui;
 
     public YAMM(Interface ui) {
         Security.setProperty("crypto.policy", "unlimited");
+        prop = new Properties();
+        random = new SecureRandom();
         this.ui = ui;
 
         // see http://www.mkyong.com/java/java-properties-file-examples
-        prop = new Properties();
         if (new File("config.properties").exists()) {
             // load existing config
             InputStream input = null;
@@ -65,15 +67,15 @@ public class YAMM {
 
         // request the password
         // TODO: CHANGE THIS TO AN ARRAY OF CHARS - STRINGS ARE IMMUTABLE SO CANNOT BE ZEROED!
-        String password = "";
-        while (password.length() < 12) {
+        char[] password = {};
+        while (password.length < 12) {
             try {
                 if (dataExists) {
-                    password = ui.requestString("Please enter your YAMM encryption password:");
+                    password = ui.requestCharArray("Please enter your YAMM encryption password:");
                 } else {
-                    password = ui.requestString("Please enter a password (minimum length 12 characters) to use to encrypt your YAMM data:");
+                    password = ui.requestCharArray("Please enter a password (minimum length 12 characters) to use to encrypt your YAMM data:");
                 }
-                if (password.length() < 12) {
+                if (password.length < 12) {
                     ui.showError("Password must be greater than 12 characters!");
                 } else {
                     break;
@@ -90,7 +92,10 @@ public class YAMM {
         StandardPBEStringEncryptor encryptor = new StandardPBEStringEncryptor();
         encryptor.setProvider(new BouncyCastleProvider());
         encryptor.setAlgorithm("PBEWITHSHA256AND256BITAES-CBC-BC");
-        encryptor.setPassword(password);
+        encryptor.setPasswordCharArray(password);
+        password = generateSecureRandom(password.length); // securely overwrite password
+        ui.showMessage("Password used and no longer required (so overwritten). I now think the password is " + new String(password));
+
 
         // check that we can do crypto
         try {
@@ -131,12 +136,9 @@ public class YAMM {
         }
 
         // generate session ID
-        Random random = new SecureRandom();
-        String symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        char[] buffer = new char[24];
-        for (int i = 0; i < buffer.length; ++i)
-            buffer[i] = symbols.charAt(random.nextInt(symbols.length()));
-        ui.showMessage("Session ID: " + new String(buffer));
+        char[] sessionId = generateSecureRandom(24);
+        ui.showMessage("Session ID: " + new String(sessionId));
+        // TODO: once the session ID has been sent to the browser it could be replaced with a hash of the session ID
 
         // start web server
         try {
@@ -144,6 +146,15 @@ public class YAMM {
         } catch (IOException e) {
             ui.showError("Couldn't start server:\n" + e);
         }
+    }
+
+    private char[] generateSecureRandom(int length) {
+        assert length > 0;
+        final String symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        char[] buffer = new char[length];
+        for (int i = 0; i < buffer.length; ++i)
+            buffer[i] = symbols.charAt(random.nextInt(symbols.length()));
+        return buffer;
     }
 
     private void saveProperties() {

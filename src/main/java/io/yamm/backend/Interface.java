@@ -3,6 +3,7 @@ package io.yamm.backend;
 public interface Interface {
     void quit();
     String requestFolder() throws NullPointerException;
+    char[] requestCharArray(String message);
     String requestString(String message);
     void showError(String message);
     void showError(String title, String message);

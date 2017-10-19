@@ -110,6 +110,10 @@ public class GUI implements Interface,Runnable {
         return f.getSelectedFile().toString();
     }
 
+    public char[] requestCharArray(String message) {
+        return JOptionPane.showInputDialog("<html><p style='width:240px'>" + message + "</p></html>").toCharArray();
+    }
+
     public String requestString(String message) {
         return JOptionPane.showInputDialog("<html><p style='width:240px'>" + message + "</p></html>");
     }
