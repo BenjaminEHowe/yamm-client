@@ -2,25 +2,20 @@ package io.yamm.backend;
 
 import com.mashape.unirest.http.Unirest;
 
-import java.io.*;
 import java.lang.reflect.InvocationTargetException;
-import java.security.SecureRandom;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 
 public class YAMM {
     private Map<UUID, Account> accounts  = new HashMap<>();
-    private String dataFolder = null;
-    private Random random;
     private final UserInterface ui;
 
     public YAMM(UserInterface ui) {
         this.ui = ui;
         Unirest.setDefaultHeader("User-Agent", "YAMMBot/" + getVersion() + "; +https://yamm.io/bot");
-        random = new SecureRandom();
     }
 
-    public void addAccount(String providerSlug) throws CancellationException, ClassNotFoundException, Exception {
+    public void addAccount(String providerSlug) throws Exception {
         // get the provider class, or throw ClassNotFoundException
         Class<?> provider = Class.forName("io.yamm.backend.providers." + providerSlug);
 

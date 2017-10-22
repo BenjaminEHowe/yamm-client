@@ -20,7 +20,6 @@ class GUI implements UserInterface,Runnable {
     private static GUI gui;
     private SystemTray tray;
     private TrayIcon trayIcon;
-    private YAMM yamm;
 
     public static void main(String[] args) {
         gui = new GUI();
@@ -79,9 +78,8 @@ class GUI implements UserInterface,Runnable {
         }
 
         // launch the YAMM logic
-        yamm = new YAMM(gui);
+        YAMM yamm = new YAMM(gui);
         dh = new DataHandler(gui, yamm);
-        dh.load();
         try {
             new Webserver(gui, yamm);
         } catch (IOException e) {
@@ -112,6 +110,7 @@ class GUI implements UserInterface,Runnable {
     }
 
     void quitWithoutSaving() {
+        dh.overwriteSensitiveData();
         tray.remove(trayIcon);
         System.exit(0);
     }

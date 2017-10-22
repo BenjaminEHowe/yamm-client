@@ -25,7 +25,6 @@ class DataHandler {
     DataHandler(GUI gui, YAMM yamm) {
         this.gui = gui;
         this.yamm = yamm;
-
         Security.setProperty("crypto.policy", "unlimited");
 
         // see http://www.mkyong.com/java/java-properties-file-examples
@@ -96,7 +95,8 @@ class DataHandler {
         encryptor.setProvider(new BouncyCastleProvider());
         encryptor.setAlgorithm("PBEWITHSHA256AND256BITAES-CBC-BC");
         encryptor.setPasswordCharArray(password);
-        password = generateSecureRandom(password.length); // securely overwrite password
+        //noinspection UnusedAssignment securely overwrite password
+        password = generateSecureRandom(password.length);
 
         // check that we can do crypto
         try {
@@ -170,7 +170,7 @@ class DataHandler {
         return buffer;
     }
 
-    void load() {
+    void overwriteSensitiveData() { // TODO: implement this
     }
 
     void save() {
@@ -178,7 +178,7 @@ class DataHandler {
         saveProperties();
     }
 
-    private void saveData() {
+    private void saveData() { // TODO: implement this
     }
 
     private void saveProperties() {

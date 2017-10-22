@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.rmi.RemoteException;
 import java.util.*;
 
+@SuppressWarnings("unused") // instantiated by YAMM by reflection
 public class Starling implements BankAccount {
     private char[] accessToken;
     private String accountNumber;
@@ -171,7 +172,7 @@ public class Starling implements BankAccount {
         return sortCode;
     }
 
-    public Transaction[] getTransactions() throws RemoteException {
+    public Transaction[] getTransactions() throws RemoteException { // TODO: implement this
         throw new UnsupportedOperationException();
     }
 

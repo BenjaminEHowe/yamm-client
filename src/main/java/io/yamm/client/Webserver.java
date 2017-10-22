@@ -40,7 +40,8 @@ class Webserver extends NanoHTTPD {
         } catch (NoSuchAlgorithmException e) {
             ui.showException(e);
         }
-        auth = DataHandler.generateRandom(random, 24); // securely overwrite auth code
+        //noinspection UnusedAssignment securely overwrite auth code
+        auth = DataHandler.generateRandom(random, 24);
     }
 
     @Override
@@ -136,7 +137,7 @@ class Webserver extends NanoHTTPD {
                                     "application/json",
                                     json.toString());
                         } catch (Exception e) {
-                            new Thread(() -> { ui.showException(e); }).start();
+                            new Thread(() -> ui.showException(e)).start();
                             json.put("message", "Unknown exception.");
                             return newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
                                     "application/json",
