@@ -19,7 +19,6 @@ class DataHandler {
     private StandardPBEStringEncryptor encryptor;
     private final GUI gui;
     private Properties prop = new Properties();
-    private Random random = new SecureRandom();
     private final YAMM yamm;
 
     DataHandler(GUI gui, YAMM yamm) {
@@ -96,7 +95,7 @@ class DataHandler {
         encryptor.setAlgorithm("PBEWITHSHA256AND256BITAES-CBC-BC");
         encryptor.setPasswordCharArray(password);
         //noinspection UnusedAssignment securely overwrite password
-        password = generateSecureRandom(password.length);
+        password = YAMM.generateRandom(new SecureRandom(), password.length);
 
         // check that we can do crypto
         try {
@@ -157,20 +156,8 @@ class DataHandler {
         return json;
     }
 
-    private char[] generateSecureRandom(int length) {
-        return DataHandler.generateRandom(random, length);
-    }
-
-    static char[] generateRandom(Random random, int length) {
-        assert length > 0;
-        final String symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        char[] buffer = new char[length];
-        for (int i = 0; i < buffer.length; ++i)
-            buffer[i] = symbols.charAt(random.nextInt(symbols.length()));
-        return buffer;
-    }
-
-    void overwriteSensitiveData() { // TODO: implement this
+    void overwriteSensitiveData() {
+        yamm.overwriteSensitiveData();
     }
 
     void save() {

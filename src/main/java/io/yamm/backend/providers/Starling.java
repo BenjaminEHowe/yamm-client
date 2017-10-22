@@ -179,4 +179,8 @@ public class Starling implements BankAccount {
     public UUID getUUID() {
         return uuid;
     }
+
+    public void overwriteSensitiveData() {
+        accessToken = yamm.generateSecureRandom(accessToken.length);
+    }
 }

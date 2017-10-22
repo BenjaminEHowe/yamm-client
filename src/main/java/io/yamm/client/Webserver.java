@@ -28,7 +28,7 @@ class Webserver extends NanoHTTPD {
         Random random = new SecureRandom();
 
         // generate auth code
-        char[] auth = DataHandler.generateRandom(random, 24);
+        char[] auth = YAMM.generateRandom(random, 24);
 
         start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
         java.awt.Desktop.getDesktop().browse(java.net.URI.create("http://localhost:" + getListeningPort() + "/v1/about?auth=" + new String(auth)));
@@ -41,7 +41,7 @@ class Webserver extends NanoHTTPD {
             ui.showException(e);
         }
         //noinspection UnusedAssignment securely overwrite auth code
-        auth = DataHandler.generateRandom(random, 24);
+        auth = YAMM.generateRandom(random, 24);
     }
 
     @Override
