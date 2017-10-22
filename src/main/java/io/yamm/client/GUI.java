@@ -1,6 +1,6 @@
-package io.yamm.utils;
+package io.yamm.client;
 
-import io.yamm.backend.Interface;
+import io.yamm.backend.UserInterface;
 import io.yamm.backend.YAMM;
 
 import javax.imageio.ImageIO;
@@ -11,11 +11,12 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
-public class GUI implements Interface,Runnable {
+class GUI implements UserInterface,Runnable {
 
     // sample from the Oracle tutorials:
     // https://docs.oracle.com/javase/tutorial/uiswing/misc/systemtray.html
 
+    private DataHandler dh;
     private static GUI gui;
     private SystemTray tray;
     private TrayIcon trayIcon;
@@ -79,6 +80,13 @@ public class GUI implements Interface,Runnable {
 
         // launch the YAMM logic
         yamm = new YAMM(gui);
+        dh = new DataHandler(gui, yamm);
+        dh.load();
+        try {
+            new Webserver(gui, yamm);
+        } catch (IOException e) {
+            showException(e);
+        }
 
         // listeners etc.
         trayIcon.addActionListener(e -> JOptionPane.showMessageDialog(null,
@@ -95,10 +103,15 @@ public class GUI implements Interface,Runnable {
             }
         });
 
-        exitItem.addActionListener(e -> yamm.quit());
+        exitItem.addActionListener(e -> quit());
     }
 
     public void quit() {
+        dh.save();
+        quitWithoutSaving();
+    }
+
+    void quitWithoutSaving() {
         tray.remove(trayIcon);
         System.exit(0);
     }
@@ -141,7 +154,7 @@ public class GUI implements Interface,Runnable {
 
         // stuff it in a scrollpane with a controlled size.
         JScrollPane scrollPane = new JScrollPane(textArea);
-        scrollPane.setPreferredSize(new Dimension(480, 360));
+        scrollPane.setPreferredSize(new Dimension(600, 240));
 
         // pass the scrollpane to the joptionpane.
         JOptionPane.showMessageDialog(null, scrollPane, "Exception!", JOptionPane.ERROR_MESSAGE);

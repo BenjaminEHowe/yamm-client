@@ -1,6 +1,6 @@
 package io.yamm.backend;
 
-public interface Interface {
+public interface UserInterface {
     void quit();
     String requestFolder() throws NullPointerException;
     char[] requestCharArray(String message);
