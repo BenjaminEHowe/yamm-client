@@ -12,10 +12,8 @@ import java.nio.charset.StandardCharsets;
 import java.rmi.RemoteException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.security.SecureRandom;
+import java.util.*;
 import java.util.concurrent.CancellationException;
 
 class Webserver extends NanoHTTPD {
@@ -27,9 +25,10 @@ class Webserver extends NanoHTTPD {
         super(0);
         this.ui = ui;
         this.yamm = yamm;
+        Random random = new SecureRandom();
 
         // generate auth code
-        char[] auth = yamm.generateSecureRandom(24);
+        char[] auth = DataHandler.generateRandom(random, 24);
 
         start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
         java.awt.Desktop.getDesktop().browse(java.net.URI.create("http://localhost:" + getListeningPort() + "/v1/about?auth=" + new String(auth)));
@@ -41,7 +40,7 @@ class Webserver extends NanoHTTPD {
         } catch (NoSuchAlgorithmException e) {
             ui.showException(e);
         }
-        auth = yamm.generateSecureRandom(24); // securely overwrite auth code
+        auth = DataHandler.generateRandom(random, 24); // securely overwrite auth code
     }
 
     @Override

@@ -60,15 +60,6 @@ public class YAMM {
         }
     }
 
-    public char[] generateSecureRandom(int length) {
-        assert length > 0;
-        final String symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        char[] buffer = new char[length];
-        for (int i = 0; i < buffer.length; ++i)
-            buffer[i] = symbols.charAt(random.nextInt(symbols.length()));
-        return buffer;
-    }
-
     public Map<UUID, Account> getAccounts() {
         return accounts;
     }

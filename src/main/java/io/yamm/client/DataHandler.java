@@ -158,6 +158,10 @@ class DataHandler {
     }
 
     private char[] generateSecureRandom(int length) {
+        return DataHandler.generateRandom(random, length);
+    }
+
+    static char[] generateRandom(Random random, int length) {
         assert length > 0;
         final String symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         char[] buffer = new char[length];
