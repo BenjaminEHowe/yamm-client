@@ -2,10 +2,12 @@ package io.yamm.client;
 
 import io.yamm.backend.Account;
 import io.yamm.backend.BankAccount;
+import io.yamm.backend.Transaction;
 import io.yamm.backend.YAMM;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.jasypt.encryption.pbe.StandardPBEStringEncryptor;
 import org.jasypt.exceptions.EncryptionOperationNotPossibleException;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.*;
@@ -185,5 +187,27 @@ class DataHandler {
                 }
             }
         }
+    }
+
+    static JSONObject transactionToJSON(Transaction transaction) throws RemoteException {
+        JSONObject json = new JSONObject();
+
+        json.put("amount", transaction.amount);
+        json.put("balance", transaction.balance);
+        json.put("created", transaction.created.toString());
+        json.put("currency", transaction.currency.getCurrencyCode());
+        json.put("description", transaction.description);
+        json.put("id", transaction.id.toString());
+
+        return json;
+    }
+
+    static JSONArray transactionsToJSON(Transaction[] transactions) throws RemoteException {
+        Collections.reverse(Arrays.asList(transactions)); // so the newest transaction is first
+        JSONArray json = new JSONArray();
+        for (Transaction transaction : transactions) {
+            json.put(transactionToJSON(transaction));
+        }
+        return json;
     }
 }

@@ -79,7 +79,11 @@ class GUI implements UserInterface,Runnable {
 
         // launch the YAMM logic
         YAMM yamm = new YAMM(gui);
-        dh = new DataHandler(gui, yamm);
+        try {
+            dh = new DataHandler(gui, yamm);
+        } catch (NullPointerException e) { // if crypto couldn't be initialised
+            quitWithoutSaving();
+        }
         try {
             new Webserver(gui, yamm);
         } catch (IOException e) {
@@ -110,7 +114,10 @@ class GUI implements UserInterface,Runnable {
     }
 
     void quitWithoutSaving() {
-        dh.overwriteSensitiveData();
+        try {
+            dh.overwriteSensitiveData();
+        } catch (NullPointerException ignored) {
+        }
         tray.remove(trayIcon);
         System.exit(0);
     }

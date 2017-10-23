@@ -90,22 +90,69 @@ class Webserver extends NanoHTTPD {
         // do something!
         switch (URIParts[1]) {
             case "accounts":
-                switch (session.getMethod()) {
-                    case GET:
-                        JSONArray accounts = new JSONArray();
-                        for (Map.Entry<UUID, Account> account : yamm.getAccounts().entrySet()) {
-                            try {
-                                accounts.put(DataHandler.accountToJSON(account.getValue()));
-                            } catch (RemoteException e) {
-                                yamm.raiseException(e);
-                            }
-                        }
-                        return newFixedLengthResponse(Response.Status.OK,
-                                "application/json",
-                                accounts.toString());
+                // if an account has been specified
+                if (URIParts.length > 2) {
+                    // if an operation has been specified
+                    if (URIParts.length > 3) {
+                        switch(URIParts[3]) {
+                            case "transactions":
+                                try {
+                                    JSONArray transactions = DataHandler.transactionsToJSON(yamm.getAccounts().get(UUID.fromString(URIParts[2])).getTransactions());
+                                    return newFixedLengthResponse(Response.Status.OK,
+                                            "application/json",
+                                            transactions.toString());
+                                } catch (NullPointerException e) {
+                                    yamm.raiseException(e);
+                                    json.put("message", "The requested account was not found.");
+                                    return newFixedLengthResponse(Response.Status.NOT_FOUND,
+                                            "application/json",
+                                            json.toString());
+                                } catch (RemoteException e) {
+                                    yamm.raiseException(e);
+                                }
 
-                    default:
-                        return MethodNotAllowed();
+                            default:
+                                return NotFound();
+                        }
+                    } else {
+                        switch (session.getMethod()) {
+                            case GET:
+                                try {
+                                    JSONObject account = DataHandler.accountToJSON(yamm.getAccounts().get(UUID.fromString(URIParts[2])));
+                                    return newFixedLengthResponse(Response.Status.OK,
+                                            "application/json",
+                                            account.toString());
+                                } catch (NullPointerException e) {
+                                    json.put("message", "The requested account was not found.");
+                                    return newFixedLengthResponse(Response.Status.NOT_FOUND,
+                                            "application/json",
+                                            json.toString());
+                                } catch (RemoteException e) {
+                                    yamm.raiseException(e);
+                                }
+
+                            default:
+                                return MethodNotAllowed();
+                        }
+                    }
+                } else {
+                    switch (session.getMethod()) {
+                        case GET:
+                            JSONArray accounts = new JSONArray();
+                            for (Map.Entry<UUID, Account> account : yamm.getAccounts().entrySet()) {
+                                try {
+                                    accounts.put(DataHandler.accountToJSON(account.getValue()));
+                                } catch (RemoteException e) {
+                                    yamm.raiseException(e);
+                                }
+                            }
+                            return newFixedLengthResponse(Response.Status.OK,
+                                    "application/json",
+                                    accounts.toString());
+
+                        default:
+                            return MethodNotAllowed();
+                    }
                 }
 
             case "account-requests":
@@ -161,10 +208,7 @@ class Webserver extends NanoHTTPD {
                 }
 
             default:
-                json.put("message", "Endpoint not found.");
-                return newFixedLengthResponse(Response.Status.NOT_FOUND,
-                        "application/json",
-                        json.toString());
+                return NotFound();
         }
     }
 
@@ -173,6 +217,14 @@ class Webserver extends NanoHTTPD {
         json.put("message",
                 "Endpoint exists but does not support method.");
         return newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED,
+                "application/json",
+                json.toString());
+    }
+
+    private Response NotFound() {
+        JSONObject json = new JSONObject();
+        json.put("message", "Endpoint not found.");
+        return newFixedLengthResponse(Response.Status.NOT_FOUND,
                 "application/json",
                 json.toString());
     }

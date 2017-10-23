@@ -3,6 +3,7 @@ package io.yamm.backend;
 import com.mashape.unirest.http.Unirest;
 
 import java.lang.reflect.InvocationTargetException;
+import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.util.*;
 import java.util.concurrent.CancellationException;
@@ -57,6 +58,11 @@ public class YAMM {
         }
     }
 
+    public static Long currencyInMinorUnits(Currency currency, BigDecimal amount) {
+        BigDecimal multiplier = new BigDecimal (Math.pow(10, currency.getDefaultFractionDigits()));
+        return amount.multiply(multiplier).longValue();
+    }
+
     public char[] generateSecureRandom(int length) {
         return YAMM.generateRandom(random, length);
     }
@@ -86,9 +92,5 @@ public class YAMM {
 
     public void raiseException(Exception e) {
         ui.showException(e);
-    }
-
-    public static long secondsBetween(Date d1, Date d2) {
-        return Math.abs((d2.getTime()-d1.getTime())/1000);
     }
 }

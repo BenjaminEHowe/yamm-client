@@ -5,24 +5,28 @@ import com.mashape.unirest.http.JsonNode;
 import com.mashape.unirest.http.Unirest;
 import com.mashape.unirest.http.exceptions.UnirestException;
 import io.yamm.backend.*;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.math.BigDecimal;
 import java.rmi.RemoteException;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 @SuppressWarnings("unused") // instantiated by YAMM by reflection
 public class Starling implements BankAccount {
     private char[] accessToken;
     private String accountNumber;
-    private CachedValue<Long, Date> availableToSpend;
-    private CachedValue<Long, Date> balance;
+    private CachedValue<Long, ZonedDateTime> availableToSpend;
+    private CachedValue<Long, ZonedDateTime> balance;
     private String bic;
     private Currency currency;
     private String iban;
     private String nickname = "";
     private String sortCode;
-    private CachedValue<List<Transaction>, Date> transactions;
+    private CachedValue<List<Transaction>, ZonedDateTime> transactions;
     private UUID uuid;
     private YAMM yamm;
 
@@ -37,26 +41,24 @@ public class Starling implements BankAccount {
 
     public Starling(char[][] credentials,
                     String accountNumber,
-                    CachedValue<Long, Date> availableToSpend,
-                    CachedValue<Long, Date> balance,
                     String bic,
                     Currency currency,
                     String iban,
                     String nickname,
                     String sortCode,
-                    CachedValue<List<Transaction>, Date> transactions,
+                    Transaction[] transactions,
                     UUID uuid,
                     YAMM yamm) {
         accessToken = Arrays.copyOf(credentials[0], credentials[0].length);
         this.accountNumber = accountNumber;
-        this.availableToSpend = availableToSpend;
-        this.balance = balance;
         this.bic = bic;
         this.currency = currency;
         this.iban = iban;
         this.nickname = nickname;
         this.sortCode = sortCode;
-        this.transactions = transactions;
+        // transactions: set the cache expiry to the epoch in order to force (partial) refresh
+        this.transactions = new CachedValue<>(new ArrayList<>(Arrays.asList(transactions)),
+                Instant.ofEpochSecond(0).atZone(ZoneId.of("UTC")));
         this.uuid = uuid;
         this.yamm = yamm;
     }
@@ -77,20 +79,11 @@ public class Starling implements BankAccount {
         // set currency
         currency = Currency.getInstance(json.getString("currency"));
 
-        BigDecimal multiplier = new BigDecimal (Math.pow(10, currency.getDefaultFractionDigits()));
-        BigDecimal tmpBigDec;
-
         // set available balance
-        tmpBigDec = json.getBigDecimal("availableToSpend");
-        availableToSpend = new CachedValue<>(
-                tmpBigDec.multiply(multiplier).longValue(),
-                new Date());
+        availableToSpend = new CachedValue<>(YAMM.currencyInMinorUnits(currency, json.getBigDecimal("availableToSpend")));
 
         // set balance
-        tmpBigDec = json.getBigDecimal("clearedBalance");
-        balance = new CachedValue<>(
-                tmpBigDec.multiply(multiplier).longValue(),
-                new Date());
+        balance = new CachedValue<>(YAMM.currencyInMinorUnits(currency, json.getBigDecimal("clearedBalance")));
     }
 
     private HttpResponse<JsonNode> callEndpoint(String endpoint) throws RemoteException {
@@ -113,6 +106,53 @@ public class Starling implements BankAccount {
         }
     }
 
+    private void callTransactionEndpoint() throws RemoteException {
+        try {
+            // TODO: improve this to handle transactions which take a while to settle
+            Transaction newestTransaction = transactions.value.get(transactions.value.size() - 1);
+            callTransactionEndpoint(newestTransaction.created, ZonedDateTime.now());
+        } catch (IndexOutOfBoundsException|NullPointerException e) {
+            // by default, get transactions from the epoch to now
+            callTransactionEndpoint(Instant.ofEpochSecond(0).atZone(ZoneId.of("UTC")), ZonedDateTime.now());
+        }
+    }
+
+    private void callTransactionEndpoint(ZonedDateTime from, ZonedDateTime to) throws RemoteException {
+        String fromStr = from.getYear() + "-" + String.format("%02d", from.getMonthValue()) + "-" + String.format("%02d", from.getDayOfMonth());
+        String toStr = to.getYear() + "-" + String.format("%02d", to.getMonthValue()) + "-" + String.format("%02d", to.getDayOfMonth());
+        JSONObject json = callEndpoint("v1/transactions?from=" + fromStr + "&to=" + toStr).getBody().getObject();
+
+        List<Transaction> transactions;
+        try {
+            transactions = this.transactions.value;
+        } catch (NullPointerException e) {
+            transactions = new ArrayList<>();
+        }
+
+        JSONArray jsonTransactions = json.getJSONObject("_embedded").getJSONArray("transactions");
+        // iterate through transactions backwards (i.e. oldest first)
+        for (int i = jsonTransactions.length() - 1; i >= 0; --i) {
+            JSONObject jsonTransaction = jsonTransactions.getJSONObject(i);
+            UUID id = UUID.fromString(jsonTransaction.getString("id"));
+            Currency currency = Currency.getInstance(jsonTransaction.getString("currency"));
+            Long amount = YAMM.currencyInMinorUnits(currency, jsonTransaction.getBigDecimal("amount"));
+            Long balance = YAMM.currencyInMinorUnits(currency, jsonTransaction.getBigDecimal("balance"));
+            ZonedDateTime created = ZonedDateTime.parse(jsonTransaction.getString("created"));
+            String description = jsonTransaction.getString("narrative");
+
+            transactions.add(new Transaction(
+                    amount,
+                    balance,
+                    created,
+                    currency,
+                    description,
+                    id
+            ));
+        }
+
+        this.transactions = new CachedValue<>(transactions);
+    }
+
     public String getAccountNumber() {
         return accountNumber;
     }
@@ -120,7 +160,7 @@ public class Starling implements BankAccount {
     public Long getAvailableToSpend() throws RemoteException {
         try {
             // cache for 60 seconds
-            if (YAMM.secondsBetween(new Date(), availableToSpend.updated) < 60) {
+            if (ChronoUnit.SECONDS.between(ZonedDateTime.now(), availableToSpend.updated) < 60) {
                 return availableToSpend.value;
             } else {
                 callBalanceEndpoint();
@@ -135,7 +175,7 @@ public class Starling implements BankAccount {
     public Long getBalance() throws RemoteException {
         try {
             // cache for 60 seconds
-            if (YAMM.secondsBetween(new Date(), balance.updated) < 60) {
+            if (ChronoUnit.SECONDS.between(ZonedDateTime.now(), balance.updated) < 60) {
                 return balance.value;
             } else {
                 callBalanceEndpoint();
@@ -172,8 +212,19 @@ public class Starling implements BankAccount {
         return sortCode;
     }
 
-    public Transaction[] getTransactions() throws RemoteException { // TODO: implement this
-        throw new UnsupportedOperationException();
+    public Transaction[] getTransactions() throws RemoteException {
+        try {
+            // cache for 60 seconds
+            if (ChronoUnit.SECONDS.between(ZonedDateTime.now(), transactions.updated) < 60) {
+                return transactions.value.toArray(new Transaction[transactions.value.size()]);
+            } else {
+                callTransactionEndpoint();
+                return transactions.value.toArray(new Transaction[transactions.value.size()]);
+            }
+        } catch (NullPointerException e) {
+            callTransactionEndpoint();
+            return transactions.value.toArray(new Transaction[transactions.value.size()]);
+        }
     }
 
     public UUID getUUID() {

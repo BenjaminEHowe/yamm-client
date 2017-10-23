@@ -1,10 +1,16 @@
 package io.yamm.backend;
 
-public class CachedValue<Object, Date> {
-    public final Object value;
-    public final Date updated;
+import java.time.ZonedDateTime;
 
-    public CachedValue(Object value, Date updated) {
+public class CachedValue<Object, ZonedDateTime> {
+    public final Object value;
+    public final ZonedDateTime updated;
+
+    public CachedValue(Object value) {
+        this(value, (ZonedDateTime) java.time.ZonedDateTime.now());
+    }
+
+    public CachedValue(Object value, ZonedDateTime updated) {
         this.value = value;
         this.updated = updated;
     }
