@@ -11,7 +11,7 @@ public class Transaction {
     public final Currency currency;
     public final String description;
     public final UUID id;
-    // TODO: add type, counterparty, settlement
+    // TODO: add type, counterparty, settlement, declines, FX data, and categorisation
 
     public Transaction(Long amount,
                        Long balance,

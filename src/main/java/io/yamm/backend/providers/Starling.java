@@ -80,10 +80,12 @@ public class Starling implements BankAccount {
         currency = Currency.getInstance(json.getString("currency"));
 
         // set available balance
-        availableToSpend = new CachedValue<>(YAMM.currencyInMinorUnits(currency, json.getBigDecimal("availableToSpend")));
+        availableToSpend = new CachedValue<>(
+                new Long(json.getBigDecimal("availableToSpend").toString().replace(".", "")));
 
         // set balance
-        balance = new CachedValue<>(YAMM.currencyInMinorUnits(currency, json.getBigDecimal("clearedBalance")));
+        balance = new CachedValue<>(
+                new Long(json.getBigDecimal("clearedBalance").toString().replace(".", "")));
     }
 
     private HttpResponse<JsonNode> callEndpoint(String endpoint) throws RemoteException {
@@ -135,8 +137,8 @@ public class Starling implements BankAccount {
             JSONObject jsonTransaction = jsonTransactions.getJSONObject(i);
             UUID id = UUID.fromString(jsonTransaction.getString("id"));
             Currency currency = Currency.getInstance(jsonTransaction.getString("currency"));
-            Long amount = YAMM.currencyInMinorUnits(currency, jsonTransaction.getBigDecimal("amount"));
-            Long balance = YAMM.currencyInMinorUnits(currency, jsonTransaction.getBigDecimal("balance"));
+            Long amount = new Long(jsonTransaction.getBigDecimal("amount").toString().replace(".", ""));
+            Long balance = new Long(jsonTransaction.getBigDecimal("balance").toString().replace(".", ""));
             ZonedDateTime created = ZonedDateTime.parse(jsonTransaction.getString("created"));
             String description = jsonTransaction.getString("narrative");
 
@@ -189,6 +191,10 @@ public class Starling implements BankAccount {
 
     public String getBIC() {
         return bic;
+    }
+
+    private char[][] getCredentials() {
+        return new char[][] {accessToken};
     }
 
     public Currency getCurrency() throws RemoteException {

@@ -138,17 +138,17 @@ class Webserver extends NanoHTTPD {
                 } else {
                     switch (session.getMethod()) {
                         case GET:
-                            JSONArray accounts = new JSONArray();
-                            for (Map.Entry<UUID, Account> account : yamm.getAccounts().entrySet()) {
-                                try {
-                                    accounts.put(DataHandler.accountToJSON(account.getValue()));
-                                } catch (RemoteException e) {
-                                    yamm.raiseException(e);
-                                }
+                            try {
+                                JSONArray accounts = DataHandler.accountsToJSON(yamm.getAccounts());
+                                return newFixedLengthResponse(Response.Status.OK,
+                                        "application/json",
+                                        accounts.toString());
+                            } catch (RemoteException e) {
+                                ui.showException(e);
+                                return newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
+                                        "application/json",
+                                        json.toString());
                             }
-                            return newFixedLengthResponse(Response.Status.OK,
-                                    "application/json",
-                                    accounts.toString());
 
                         default:
                             return MethodNotAllowed();

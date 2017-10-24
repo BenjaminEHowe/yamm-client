@@ -18,6 +18,10 @@ public class YAMM {
         Unirest.setDefaultHeader("User-Agent", "YAMMBot/" + getVersion() + "; +https://yamm.io/bot");
     }
 
+    public void addAccount(Account account) {
+        accounts.put(account.getUUID(), account);
+    }
+
     public void addAccount(String providerSlug) throws Exception {
         // get the provider class, or throw ClassNotFoundException
         Class<?> provider = Class.forName("io.yamm.backend.providers." + providerSlug);
@@ -46,9 +50,8 @@ public class YAMM {
 
         // try to instantiate the object & add it to the accounts list
         try {
-            Account account = (Account) provider.getConstructor(char[][].class, YAMM.class)
-                    .newInstance(credentials, this);
-            accounts.put(account.getUUID(), account);
+            addAccount((Account) provider.getConstructor(char[][].class, YAMM.class)
+                    .newInstance(credentials, this));
         } catch (InstantiationException|
                 IllegalAccessException|
                 InvocationTargetException|
@@ -56,11 +59,6 @@ public class YAMM {
                 NullPointerException e) {
             throw new Exception("Error instantiating account!", e);
         }
-    }
-
-    public static Long currencyInMinorUnits(Currency currency, BigDecimal amount) {
-        BigDecimal multiplier = new BigDecimal (Math.pow(10, currency.getDefaultFractionDigits()));
-        return amount.multiply(multiplier).longValue();
     }
 
     public char[] generateSecureRandom(int length) {
