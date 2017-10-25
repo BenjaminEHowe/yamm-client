@@ -239,7 +239,13 @@ class DataHandler {
         InputStream input = new FileInputStream(dataFolder + File.separator + filename);
         String encrypted = new Scanner(input, StandardCharsets.UTF_8.name()).useDelimiter("\\A").next();
         input.close();
-        return encryptor.decrypt(encrypted);
+        try {
+            return encryptor.decrypt(encrypted);
+        } catch (EncryptionOperationNotPossibleException e) {
+            gui.showError("Incorrect password entered! YAMM will now quit.");
+            gui.quitWithoutSaving();
+            return ""; // we'll never actually get here due to the previous statement
+        }
     }
 
     private void encryptedWrite(String filename, String data) {
