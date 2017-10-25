@@ -101,7 +101,7 @@
                         <configuration>
                             <outputDirectory>${project.build.directory}</outputDirectory>
                             <includeArtifactIds>bcprov-jdk15on</includeArtifactIds>
-                            <stripVersion>true</stripVersion>
+                            <stripVersion>false</stripVersion>
                         </configuration>
                     </execution>
                 </executions>
