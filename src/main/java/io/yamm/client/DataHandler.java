@@ -126,19 +126,25 @@ class DataHandler {
                     UUID uuid = UUID.fromString(accountJSON.getString("id"));
 
                     // build the array of transactions
-                    JSONArray transactionsJSON = new JSONArray(encryptedRead(uuid + ".yamm"));
-                    Transaction[] transactions = new Transaction[transactionsJSON.length()];
-                    // iterate over transactions backwards
-                    for (int j = transactionsJSON.length() - 1; j >= 0; j--) {
-                        // the oldest transaction should be the first item in the array
-                        transactions[transactionsJSON.length() - (j + 1)] = new Transaction(
-                                transactionsJSON.getJSONObject(j).getLong("amount"),
-                                transactionsJSON.getJSONObject(j).getLong("balance") ,
-                                ZonedDateTime.parse(transactionsJSON.getJSONObject(j).getString("created")),
-                                Currency.getInstance(transactionsJSON.getJSONObject(j).getString("currency")),
-                                transactionsJSON.getJSONObject(j).getString("description"),
-                                UUID.fromString(transactionsJSON.getJSONObject(j).getString("id"))
-                        );
+                    Transaction[] transactions;
+                    try {
+                        JSONArray transactionsJSON = new JSONArray(encryptedRead(uuid + ".yamm"));
+                        transactions = new Transaction[transactionsJSON.length()];
+                        // iterate over transactions backwards
+                        for (int j = transactionsJSON.length() - 1; j >= 0; j--) {
+                            // the oldest transaction should be the first item in the array
+                            transactions[transactionsJSON.length() - (j + 1)] = new Transaction(
+                                    transactionsJSON.getJSONObject(j).getLong("amount"),
+                                    transactionsJSON.getJSONObject(j).getLong("balance"),
+                                    ZonedDateTime.parse(transactionsJSON.getJSONObject(j).getString("created")),
+                                    Currency.getInstance(transactionsJSON.getJSONObject(j).getString("currency")),
+                                    transactionsJSON.getJSONObject(j).getString("description"),
+                                    UUID.fromString(transactionsJSON.getJSONObject(j).getString("id")),
+                                    transactionsJSON.getJSONObject(i).getString("providerID")
+                            );
+                        }
+                    } catch (IOException e) {
+                        transactions = new Transaction[0];
                     }
 
                     // get the provider class
@@ -345,6 +351,7 @@ class DataHandler {
         json.put("currency", transaction.currency.getCurrencyCode());
         json.put("description", transaction.description);
         json.put("id", transaction.id.toString());
+        json.put("providerID", transaction.providerID);
 
         return json;
     }

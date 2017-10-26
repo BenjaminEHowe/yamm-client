@@ -31,7 +31,8 @@ class Webserver extends NanoHTTPD {
         char[] auth = YAMM.generateRandom(random, 24);
 
         start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
-        java.awt.Desktop.getDesktop().browse(java.net.URI.create("http://localhost:" + getListeningPort() + "/v1/about?auth=" + new String(auth)));
+        java.awt.Desktop.getDesktop().browse(java.net.URI.create(
+                "https://alpha.yamm.io/app/#port=" + getListeningPort() + ",secret=" + new String(auth)));
 
         // replace auth code with a hash
         try {

@@ -9,6 +9,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.rmi.RemoteException;
+import java.text.DecimalFormat;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -36,6 +37,7 @@ public class Starling implements BankAccount {
     public Starling(char[][] credentials, YAMM yamm) throws RemoteException {
         accessToken = Arrays.copyOf(credentials[0], credentials[0].length);
         this.yamm = yamm;
+        uuid = UUID.randomUUID();
         callAccountEndpoint();
     }
 
@@ -70,7 +72,6 @@ public class Starling implements BankAccount {
         sortCode = json.getString("sortCode");
         iban = json.getString("iban");
         bic = json.getString("bic");
-        uuid = UUID.fromString(json.getString("id"));
     }
 
     private void callBalanceEndpoint() throws RemoteException {
@@ -81,11 +82,13 @@ public class Starling implements BankAccount {
 
         // set available balance
         availableToSpend = new CachedValue<>(
-                new Long(json.getBigDecimal("availableToSpend").toString().replace(".", "")));
+                new Long(new DecimalFormat("0.00").format(
+                        json.getBigDecimal("availableToSpend")).replace(".", "")));
 
         // set balance
         balance = new CachedValue<>(
-                new Long(json.getBigDecimal("clearedBalance").toString().replace(".", "")));
+                new Long(new DecimalFormat("0.00").format(
+                        json.getBigDecimal("clearedBalance")).replace(".", "")));
     }
 
     private HttpResponse<JsonNode> callEndpoint(String endpoint) throws RemoteException {
@@ -135,10 +138,12 @@ public class Starling implements BankAccount {
         // iterate through transactions backwards (i.e. oldest first)
         for (int i = jsonTransactions.length() - 1; i >= 0; --i) {
             JSONObject jsonTransaction = jsonTransactions.getJSONObject(i);
-            UUID id = UUID.fromString(jsonTransaction.getString("id"));
+            String providerID = jsonTransaction.getString("id");
             Currency currency = Currency.getInstance(jsonTransaction.getString("currency"));
-            Long amount = new Long(jsonTransaction.getBigDecimal("amount").toString().replace(".", ""));
-            Long balance = new Long(jsonTransaction.getBigDecimal("balance").toString().replace(".", ""));
+            Long amount = new Long(new DecimalFormat("0.00").format(
+                    jsonTransaction.getBigDecimal("amount")).replace(".", ""));
+            Long balance = new Long(new DecimalFormat("0.00").format(
+                    jsonTransaction.getBigDecimal("balance")).replace(".", ""));
             ZonedDateTime created = ZonedDateTime.parse(jsonTransaction.getString("created"));
             String description = jsonTransaction.getString("narrative");
 
@@ -148,7 +153,7 @@ public class Starling implements BankAccount {
                     created,
                     currency,
                     description,
-                    id
+                    providerID
             ));
         }
 
@@ -162,7 +167,7 @@ public class Starling implements BankAccount {
     public Long getAvailableToSpend() throws RemoteException {
         try {
             // cache for 60 seconds
-            if (ChronoUnit.SECONDS.between(ZonedDateTime.now(), availableToSpend.updated) < 60) {
+            if (ChronoUnit.SECONDS.between(availableToSpend.updated, ZonedDateTime.now()) < 60) {
                 return availableToSpend.value;
             } else {
                 callBalanceEndpoint();
@@ -177,7 +182,7 @@ public class Starling implements BankAccount {
     public Long getBalance() throws RemoteException {
         try {
             // cache for 60 seconds
-            if (ChronoUnit.SECONDS.between(ZonedDateTime.now(), balance.updated) < 60) {
+            if (ChronoUnit.SECONDS.between(balance.updated, ZonedDateTime.now()) < 60) {
                 return balance.value;
             } else {
                 callBalanceEndpoint();
@@ -221,7 +226,7 @@ public class Starling implements BankAccount {
     public Transaction[] getTransactions() throws RemoteException {
         try {
             // cache for 60 seconds
-            if (ChronoUnit.SECONDS.between(ZonedDateTime.now(), transactions.updated) < 60) {
+            if (ChronoUnit.SECONDS.between(transactions.updated, ZonedDateTime.now()) < 60) {
                 return transactions.value.toArray(new Transaction[transactions.value.size()]);
             } else {
                 callTransactionEndpoint();
