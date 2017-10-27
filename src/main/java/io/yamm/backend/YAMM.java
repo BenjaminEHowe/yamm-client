@@ -22,7 +22,7 @@ public class YAMM {
         accounts.put(account.getUUID(), account);
     }
 
-    public void addAccount(String providerSlug) throws Exception {
+    public UUID addAccount(String providerSlug) throws Exception {
         // get the provider class, or throw ClassNotFoundException
         Class<?> provider = Class.forName("io.yamm.backend.providers." + providerSlug);
 
@@ -34,7 +34,7 @@ public class YAMM {
             requiredCredentials = (String[]) provider.getDeclaredField("requiredCredentials").get(null);
         } catch (IllegalAccessException|NoSuchFieldException e) {
             ui.showException(e);
-            return;
+            return null;
         }
 
         // ask the user for each credential
@@ -50,8 +50,11 @@ public class YAMM {
 
         // try to instantiate the object & add it to the accounts list
         try {
-            addAccount((Account) provider.getConstructor(char[][].class, YAMM.class)
-                    .newInstance(credentials, this));
+            Account account = (Account) provider.getConstructor(char[][].class, YAMM.class)
+                    .newInstance(credentials, this);
+            UUID accountID = account.getUUID();
+            accounts.put(accountID, account);
+            return accountID;
         } catch (InstantiationException|
                 IllegalAccessException|
                 InvocationTargetException|

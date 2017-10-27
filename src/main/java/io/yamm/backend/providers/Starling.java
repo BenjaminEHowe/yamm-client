@@ -36,8 +36,8 @@ public class Starling implements BankAccount {
 
     public Starling(char[][] credentials, YAMM yamm) throws RemoteException {
         accessToken = Arrays.copyOf(credentials[0], credentials[0].length);
-        this.yamm = yamm;
         uuid = UUID.randomUUID();
+        this.yamm = yamm;
         callAccountEndpoint();
     }
 
