@@ -19,21 +19,6 @@ public class Transaction {
                        ZonedDateTime created,
                        Currency currency,
                        String description,
-                       String providerId) {
-        this.amount = amount;
-        this.balance = balance;
-        this.created = created;
-        this.currency = currency;
-        this.description = description;
-        this.id = UUID.randomUUID();
-        this.providerId = providerId;
-    }
-
-    public Transaction(Long amount,
-                       Long balance,
-                       ZonedDateTime created,
-                       Currency currency,
-                       String description,
                        UUID id,
                        String providerId) {
         this.amount = amount;
