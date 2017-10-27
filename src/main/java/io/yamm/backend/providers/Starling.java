@@ -27,8 +27,9 @@ public class Starling implements BankAccount {
     private String iban;
     private String nickname = "";
     private String sortCode;
-    private CachedValue<List<Transaction>, ZonedDateTime> transactions;
-    private UUID uuid;
+    private Map<String, UUID> transactionRefs = new HashMap<>();
+    private CachedValue<LinkedHashMap<UUID, Transaction>, ZonedDateTime> transactions;
+    private final UUID uuid;
     private YAMM yamm;
 
     public static final String name = "Starling Bank";
@@ -58,11 +59,17 @@ public class Starling implements BankAccount {
         this.iban = iban;
         this.nickname = nickname;
         this.sortCode = sortCode;
-        // transactions: set the cache expiry to the epoch in order to force (partial) refresh
-        this.transactions = new CachedValue<>(new ArrayList<>(Arrays.asList(transactions)),
-                Instant.ofEpochSecond(0).atZone(ZoneId.of("UTC")));
         this.uuid = uuid;
         this.yamm = yamm;
+
+        // add transactions
+        LinkedHashMap<UUID, Transaction> transactionsLHM = new LinkedHashMap<>();
+        for (int i = transactions.length - 1; i >= 0; i--) {
+            transactionsLHM.put(transactions[i].id, transactions[i]);
+            transactionRefs.put(transactions[i].providerId, transactions[i].id);
+        }
+        this.transactions = new CachedValue<>(transactionsLHM,
+                Instant.ofEpochSecond(0).atZone(ZoneId.of("UTC")));
     }
 
     private void callAccountEndpoint() throws RemoteException {
@@ -114,8 +121,8 @@ public class Starling implements BankAccount {
     private void callTransactionEndpoint() throws RemoteException {
         try {
             // TODO: improve this to handle transactions which take a while to settle
-            Transaction newestTransaction = transactions.value.get(transactions.value.size() - 1);
-            callTransactionEndpoint(newestTransaction.created, ZonedDateTime.now());
+            Transaction newestSettledTransaction = transactions.value.entrySet().iterator().next().getValue();
+            callTransactionEndpoint(newestSettledTransaction.created, ZonedDateTime.now());
         } catch (IndexOutOfBoundsException|NullPointerException e) {
             // by default, get transactions from the epoch to now
             callTransactionEndpoint(Instant.ofEpochSecond(0).atZone(ZoneId.of("UTC")), ZonedDateTime.now());
@@ -127,18 +134,25 @@ public class Starling implements BankAccount {
         String toStr = to.getYear() + "-" + String.format("%02d", to.getMonthValue()) + "-" + String.format("%02d", to.getDayOfMonth());
         JSONObject json = callEndpoint("v1/transactions?from=" + fromStr + "&to=" + toStr).getBody().getObject();
 
-        List<Transaction> transactions;
+        LinkedHashMap<UUID, Transaction> transactions;
         try {
             transactions = this.transactions.value;
         } catch (NullPointerException e) {
-            transactions = new ArrayList<>();
+            transactions = new LinkedHashMap<>();
         }
 
         JSONArray jsonTransactions = json.getJSONObject("_embedded").getJSONArray("transactions");
         // iterate through transactions backwards (i.e. oldest first)
         for (int i = jsonTransactions.length() - 1; i >= 0; --i) {
             JSONObject jsonTransaction = jsonTransactions.getJSONObject(i);
-            String providerID = jsonTransaction.getString("id");
+            String providerId = jsonTransaction.getString("id");
+
+            // try to find an existing transaction
+            UUID id = transactionRefs.get(providerId);
+            if (id == null) {
+                id = UUID.randomUUID();
+            }
+
             Currency currency = Currency.getInstance(jsonTransaction.getString("currency"));
             Long amount = new Long(new DecimalFormat("0.00").format(
                     jsonTransaction.getBigDecimal("amount")).replace(".", ""));
@@ -147,14 +161,18 @@ public class Starling implements BankAccount {
             ZonedDateTime created = ZonedDateTime.parse(jsonTransaction.getString("created"));
             String description = jsonTransaction.getString("narrative");
 
-            transactions.add(new Transaction(
+            Transaction transaction = new Transaction(
                     amount,
                     balance,
                     created,
                     currency,
                     description,
-                    providerID
-            ));
+                    id,
+                    providerId
+            );
+
+            transactions.put(transaction.id, transaction);
+            transactionRefs.put(transaction.providerId, transaction.id);
         }
 
         this.transactions = new CachedValue<>(transactions);
@@ -227,14 +245,14 @@ public class Starling implements BankAccount {
         try {
             // cache for 60 seconds
             if (ChronoUnit.SECONDS.between(transactions.updated, ZonedDateTime.now()) < 60) {
-                return transactions.value.toArray(new Transaction[transactions.value.size()]);
+                return transactions.value.values().toArray(new Transaction[transactions.value.size()]);
             } else {
                 callTransactionEndpoint();
-                return transactions.value.toArray(new Transaction[transactions.value.size()]);
+                return transactions.value.values().toArray(new Transaction[transactions.value.size()]);
             }
         } catch (NullPointerException e) {
             callTransactionEndpoint();
-            return transactions.value.toArray(new Transaction[transactions.value.size()]);
+            return transactions.value.values().toArray(new Transaction[transactions.value.size()]);
         }
     }
 

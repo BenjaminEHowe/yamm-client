@@ -140,7 +140,7 @@ class DataHandler {
                                     Currency.getInstance(transactionsJSON.getJSONObject(j).getString("currency")),
                                     transactionsJSON.getJSONObject(j).getString("description"),
                                     UUID.fromString(transactionsJSON.getJSONObject(j).getString("id")),
-                                    transactionsJSON.getJSONObject(i).getString("providerID")
+                                    transactionsJSON.getJSONObject(i).getString("providerId")
                             );
                         }
                     } catch (IOException e) {
@@ -351,7 +351,7 @@ class DataHandler {
         json.put("currency", transaction.currency.getCurrencyCode());
         json.put("description", transaction.description);
         json.put("id", transaction.id.toString());
-        json.put("providerID", transaction.providerID);
+        json.put("providerId", transaction.providerId);
 
         return json;
     }

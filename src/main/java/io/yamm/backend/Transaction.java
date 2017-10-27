@@ -11,7 +11,7 @@ public class Transaction {
     public final Currency currency;
     public final String description;
     public final UUID id;
-    public final String providerID;
+    public final String providerId;
     // TODO: add type, counterparty, settlement, declines, FX data, and categorisation
 
     public Transaction(Long amount,
@@ -19,14 +19,14 @@ public class Transaction {
                        ZonedDateTime created,
                        Currency currency,
                        String description,
-                       String providerID) {
+                       String providerId) {
         this.amount = amount;
         this.balance = balance;
         this.created = created;
         this.currency = currency;
         this.description = description;
         this.id = UUID.randomUUID();
-        this.providerID = providerID;
+        this.providerId = providerId;
     }
 
     public Transaction(Long amount,
@@ -35,13 +35,13 @@ public class Transaction {
                        Currency currency,
                        String description,
                        UUID id,
-                       String providerID) {
+                       String providerId) {
         this.amount = amount;
         this.balance = balance;
         this.created = created;
         this.currency = currency;
         this.description = description;
         this.id = id;
-        this.providerID = providerID;
+        this.providerId = providerId;
     }
 }
