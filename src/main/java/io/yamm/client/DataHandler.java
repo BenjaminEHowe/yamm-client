@@ -1,18 +1,19 @@
 package io.yamm.client;
 
-import io.yamm.backend.Account;
-import io.yamm.backend.BankAccount;
-import io.yamm.backend.Transaction;
-import io.yamm.backend.YAMM;
+import com.neovisionaries.i18n.CountryCode;
+import io.yamm.backend.*;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.jasypt.encryption.pbe.StandardPBEStringEncryptor;
 import org.jasypt.exceptions.EncryptionOperationNotPossibleException;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.*;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.rmi.RemoteException;
 import java.security.SecureRandom;
@@ -131,17 +132,8 @@ class DataHandler {
                         JSONArray transactionsJSON = new JSONArray(encryptedRead(uuid + ".yamm"));
                         transactions = new Transaction[transactionsJSON.length()];
                         // iterate over transactions backwards
-                        for (int j = transactionsJSON.length() - 1; j >= 0; j--) {
-                            // the oldest transaction should be the first item in the array
-                            transactions[transactionsJSON.length() - (j + 1)] = new Transaction(
-                                    transactionsJSON.getJSONObject(j).getLong("amount"),
-                                    transactionsJSON.getJSONObject(j).getLong("balance"),
-                                    ZonedDateTime.parse(transactionsJSON.getJSONObject(j).getString("created")),
-                                    Currency.getInstance(transactionsJSON.getJSONObject(j).getString("currency")),
-                                    transactionsJSON.getJSONObject(j).getString("description"),
-                                    UUID.fromString(transactionsJSON.getJSONObject(j).getString("id")),
-                                    transactionsJSON.getJSONObject(i).getString("providerId")
-                            );
+                        for (int j = 0; j < transactions.length; j++) {
+                            transactions[j] = JSONToTransaction(transactionsJSON.getJSONObject(j));
                         }
                     } catch (IOException e) {
                         transactions = new Transaction[0];
@@ -241,6 +233,62 @@ class DataHandler {
         return json;
     }
 
+    static JSONObject addressToJSON(Address address) {
+        JSONObject json = new JSONObject();
+
+        if (address.approximate != null) {
+            json.put("approximate", address.approximate);
+        }
+        if (address.city != null) {
+            json.put("city", address.city);
+        }
+        if (address.country != null) {
+            json.put("country", address.country);
+        }
+        if (address.county != null) {
+            json.put("county", address.county);
+        }
+        if (address.latitude != null) {
+            json.put("latitude", address.latitude);
+        }
+        if (address.longitude != null) {
+            json.put("longitude", address.longitude);
+        }
+        if (address.postcode != null) {
+            json.put("postcode", address.postcode);
+        }
+        if (address.streetAddress != null) {
+            json.put("streetAddress", address.streetAddress);
+        }
+
+        return json;
+    }
+
+    static JSONObject counterpartyToJSON(Counterparty counterparty) {
+        JSONObject json = new JSONObject();
+
+        if (counterparty.accountNumber != null) {
+            json.put("accountNumber", counterparty.accountNumber);
+        }
+        if (counterparty.address != null) {
+            json.put("address", addressToJSON(counterparty.address));
+        }
+        if (counterparty.icon != null) {
+            json.put("icon", counterparty.icon);
+        }
+        if (counterparty.name != null) {
+            json.put("name", counterparty.name);
+        }
+        if (counterparty.sortCode != null) {
+            json.put("sortCode", counterparty.sortCode);
+        }
+        if (counterparty.website != null) {
+            json.put("website", counterparty.website);
+        }
+
+        return json;
+    }
+
     private String encryptedRead(String filename) throws IOException {
         InputStream input = new FileInputStream(dataFolder + File.separator + filename);
         String encrypted = new Scanner(input, StandardCharsets.UTF_8.name()).useDelimiter("\\A").next();
@@ -250,7 +298,7 @@ class DataHandler {
         } catch (EncryptionOperationNotPossibleException e) {
             gui.showError("Incorrect password entered! YAMM will now quit.");
             gui.quitWithoutSaving();
-            return ""; // we'll never actually get here due to the previous statement
+            return null; // we'll never actually get here due to the previous statement
         }
     }
 
@@ -270,6 +318,260 @@ class DataHandler {
                 }
             }
         }
+    }
+
+    private Address JSONToAddress(JSONObject json) {
+        Boolean approximate;
+        String city;
+        CountryCode country;
+        String county;
+        Double latitude;
+        Double longitude;
+        String postcode;
+        String streetAddress;
+
+        try {
+            approximate = json.getBoolean("approximate");
+        } catch (JSONException e) {
+            approximate = true;
+        }
+
+        try {
+            city = json.getString("city");
+        } catch (JSONException e) {
+            city = null;
+        }
+
+        try {
+            country = CountryCode.getByCode(json.getString("country"));
+        } catch (JSONException e) {
+            country = null;
+        }
+
+        try {
+            county = json.getString("county");
+        } catch (JSONException e) {
+            county = null;
+        }
+
+        try {
+            latitude = json.getDouble("latitude");
+        } catch (JSONException e) {
+            latitude = null;
+        }
+
+        try {
+            longitude = json.getDouble("longitude");
+        } catch (JSONException e) {
+            longitude = null;
+        }
+
+        try {
+            postcode = json.getString("postcode");
+        } catch (JSONException e) {
+            postcode = null;
+        }
+
+        try {
+            streetAddress = json.getString("streetAddress");
+        } catch (JSONException e) {
+            streetAddress = null;
+        }
+
+        return new Address(
+                approximate,
+                city,
+                country,
+                county,
+                latitude,
+                longitude,
+                postcode,
+                streetAddress
+        );
+    }
+
+    private Counterparty JSONToCounterparty(JSONObject json) {
+        String accountNumber;
+        Address address;
+        URL icon;
+        String name;
+        String sortCode;
+        URL website;
+
+        try {
+            accountNumber = json.getString("accountNumber");
+        } catch (JSONException e) {
+            accountNumber = null;
+        }
+
+        try {
+            address = JSONToAddress(json.getJSONObject("address"));
+        } catch (JSONException e ) {
+            address = null;
+        }
+
+        try {
+            icon = new URL(json.getString("icon"));
+        } catch (JSONException | MalformedURLException e) {
+            // TODO: log this failure (and handle it better)
+            icon = null;
+        }
+
+        try {
+            name = json.getString("name");
+        } catch (JSONException e) {
+            // TODO: log this failure (and handle it better)
+            name = "undefined";
+        }
+
+        try {
+            sortCode = json.getString("sortCode");
+        } catch (JSONException e) {
+            sortCode = null;
+        }
+
+        try {
+            website = new URL(json.getString("website"));
+        } catch (JSONException | MalformedURLException e) {
+            // TODO: log this failure (and handle it better)
+            website = null;
+        }
+
+        return new Counterparty(
+            accountNumber,
+            address,
+            icon,
+            name,
+            sortCode,
+            website
+        );
+    }
+
+    private Transaction JSONToTransaction(JSONObject json) {
+        Long amount;
+        Long balance;
+        TransactionCategory category;
+        Counterparty counterparty;
+        ZonedDateTime created;
+        DeclineReason declineReason;
+        String description;
+        UUID id;
+        Long localAmount;
+        Currency localCurrency;
+        String mcc; // ISO 18245 merchant category code
+        String providerId;
+        ZonedDateTime settled;
+        TransactionType type;
+
+        try {
+            amount = json.getLong("amount");
+        } catch (JSONException e) {
+            // TODO: log this failure (and handle it better)
+            amount = 0L;
+        }
+
+        try {
+            balance = json.getLong("balance");
+        } catch (JSONException e) {
+            // TODO: log this failure (and handle it better)
+            balance = 0L;
+        }
+
+        try {
+            category = TransactionCategory.valueOf(json.getString("category"));
+        } catch (JSONException | IllegalArgumentException e ) {
+            category = TransactionCategory.GENERAL;
+        }
+
+        try {
+            counterparty = JSONToCounterparty(json.getJSONObject("counterparty"));
+        } catch (JSONException e ) {
+            // TODO: log this failure (and handle it better)
+            counterparty = null;
+        }
+
+        try {
+            created = ZonedDateTime.parse(json.getString("created"));
+        } catch (JSONException e ) {
+            // TODO: log this failure (and handle it better)
+            created = ZonedDateTime.now();
+        }
+
+        try {
+            declineReason = DeclineReason.valueOf(json.getString("declineReason"));
+        } catch (JSONException | IllegalArgumentException e ) {
+            declineReason = null;
+        }
+
+        try {
+            description = json.getString("description");
+        } catch (JSONException e) {
+            description = "";
+        }
+
+        try {
+            id = UUID.fromString(json.getString("id"));
+        } catch (JSONException e) {
+            // TODO: log this failure (and handle it better)
+            id = UUID.randomUUID();
+        }
+
+        try {
+            localAmount = json.getLong("localAmount");
+        } catch (JSONException e) {
+            // TODO: log this failure (and handle it better)
+            localAmount = amount;
+        }
+
+        try {
+            localCurrency = Currency.getInstance(json.getString("localCurrency"));
+        } catch (IllegalArgumentException | JSONException e) {
+            // TODO: log this failure (and handle it better)
+            localCurrency = Currency.getInstance("GBP");
+        }
+
+        try {
+            mcc = json.getString("mcc");
+        } catch (JSONException e ) {
+            mcc = null;
+        }
+
+        try {
+            providerId = json.getString("providerId");
+        } catch (JSONException e ) {
+            providerId = null;
+        }
+
+        try {
+            settled = ZonedDateTime.parse(json.getString("settled"));
+        } catch (JSONException e ) {
+            // TODO: log this failure (and handle it better)
+            settled = null;
+        }
+
+        try {
+            type = TransactionType.valueOf(json.getString("type"));
+        } catch (JSONException | IllegalArgumentException e ) {
+            type = TransactionType.UNKNOWN;
+        }
+
+        return new Transaction(
+                amount,
+                balance,
+                category,
+                counterparty,
+                created,
+                declineReason,
+                description,
+                id,
+                localAmount,
+                localCurrency,
+                mcc,
+                providerId,
+                settled,
+                type
+        );
+
     }
 
     void overwriteSensitiveData() {
@@ -345,13 +647,48 @@ class DataHandler {
     static JSONObject transactionToJSON(Transaction transaction) throws RemoteException {
         JSONObject json = new JSONObject();
 
-        json.put("amount", transaction.amount);
-        json.put("balance", transaction.balance);
-        json.put("created", transaction.created.toString());
-        json.put("currency", transaction.currency.getCurrencyCode());
-        json.put("description", transaction.description);
-        json.put("id", transaction.id.toString());
-        json.put("providerId", transaction.providerId);
+        if (transaction.amount != null) {
+            json.put("amount", transaction.amount);
+        }
+        if (transaction.balance != null) {
+            json.put("balance", transaction.balance);
+        }
+        if (transaction.category != null) {
+            json.put("category", transaction.category);
+        }
+        if (transaction.counterparty != null) {
+            json.put("counterparty", counterpartyToJSON(transaction.counterparty));
+        }
+        if (transaction.created != null) {
+            json.put("created", transaction.created);
+        }
+        if (transaction.declineReason != null) {
+            json.put("declineReason", transaction.declineReason);
+        }
+        if (transaction.description != null) {
+            json.put("description", transaction.description);
+        }
+        if (transaction.id != null) {
+            json.put("id", transaction.id);
+        }
+        if (transaction.localAmount != null) {
+            json.put("localAmount", transaction.localAmount);
+        }
+        if (transaction.localCurrency != null) {
+            json.put("localCurrency", transaction.localCurrency);
+        }
+        if (transaction.mcc != null) {
+            json.put("mcc", transaction.mcc);
+        }
+        if (transaction.providerId != null) {
+            json.put("providerId", transaction.providerId);
+        }
+        if (transaction.settled != null) {
+            json.put("settled", transaction.settled);
+        }
+        if (transaction.type != null) {
+            json.put("type", transaction.type);
+        }
 
         return json;
     }

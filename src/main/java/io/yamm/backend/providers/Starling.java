@@ -6,6 +6,7 @@ import com.mashape.unirest.http.Unirest;
 import com.mashape.unirest.http.exceptions.UnirestException;
 import io.yamm.backend.*;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.rmi.RemoteException;
@@ -121,9 +122,9 @@ public class Starling implements BankAccount {
     private void callTransactionEndpoint() throws RemoteException {
         try {
             // TODO: improve this to handle transactions which take a while to settle
-            Transaction newestSettledTransaction = transactions.value.entrySet().iterator().next().getValue();
-            callTransactionEndpoint(newestSettledTransaction.created, ZonedDateTime.now());
-        } catch (IndexOutOfBoundsException|NullPointerException e) {
+            Transaction newestTransaction = transactions.value.entrySet().iterator().next().getValue();
+            callTransactionEndpoint(newestTransaction.created.minusDays(21), ZonedDateTime.now());
+        } catch (NoSuchElementException|NullPointerException e) {
             // by default, get transactions from the epoch to now
             callTransactionEndpoint(Instant.ofEpochSecond(0).atZone(ZoneId.of("UTC")), ZonedDateTime.now());
         }
@@ -145,7 +146,16 @@ public class Starling implements BankAccount {
         // iterate through transactions backwards (i.e. oldest first)
         for (int i = jsonTransactions.length() - 1; i >= 0; --i) {
             JSONObject jsonTransaction = jsonTransactions.getJSONObject(i);
-            String providerId = jsonTransaction.getString("id");
+
+            TransactionCategory category = TransactionCategory.GENERAL;
+            Counterparty counterparty = null;
+            DeclineReason declineReason = null;
+            Long localAmount = null;
+            Currency localCurrency = null;
+            String mcc = null;
+            String providerId = jsonTransaction.getString("id");;
+            ZonedDateTime settled = null;
+            TransactionType type = TransactionType.UNKNOWN;
 
             // try to find an existing transaction
             UUID id = transactionRefs.get(providerId);
@@ -153,24 +163,177 @@ public class Starling implements BankAccount {
                 id = UUID.randomUUID();
             }
 
-            Currency currency = Currency.getInstance(jsonTransaction.getString("currency"));
             Long amount = new Long(new DecimalFormat("0.00").format(
                     jsonTransaction.getBigDecimal("amount")).replace(".", ""));
+
             Long balance = new Long(new DecimalFormat("0.00").format(
                     jsonTransaction.getBigDecimal("balance")).replace(".", ""));
+
             ZonedDateTime created = ZonedDateTime.parse(jsonTransaction.getString("created"));
+
             String description = jsonTransaction.getString("narrative");
+
+
+            switch (jsonTransaction.getString("source")) {
+                case "DIRECT_CREDIT":
+                    type = TransactionType.BACS;
+                    break;
+
+                case "DIRECT_DEBIT":
+                    type = TransactionType.DIRECT_DEBIT;
+                    break;
+
+                case "DIRECT_DEBIT_DISPUTE":
+                    type = TransactionType.DIRECT_DEBIT;
+                    break;
+
+                case "INTERNAL_TRANSFER":
+                    type = TransactionType.TRANSFER;
+                    break;
+
+                case "MASTER_CARD":
+                    type = TransactionType.CARD;
+
+                    JSONObject cardJSON = callEndpoint("v1/transactions/mastercard/" + providerId).getBody().getObject();
+
+                    switch(cardJSON.getString("mastercardTransactionMethod")) {
+                        case "CONTACTLESS":
+                            type = TransactionType.CARD_CONTACTLESS;
+                            break;
+                        case "MAGNETIC_STRIP":
+                            type = TransactionType.CARD_MAGSTRIPE;
+                            break;
+                        case "MANUAL_KEY_ENTRY":
+                            type = TransactionType.CARD_MANUAL;
+                            break;
+                        case "CHIP_AND_PIN":
+                            type = TransactionType.CARD_PIN;
+                            break;
+                        case "ONLINE":
+                            type = TransactionType.CARD_ONLINE;
+                            break;
+                        case "ATM":
+                            type = TransactionType.CARD_CASH;
+                            break;
+                        case "APPLE_PAY":
+                            type = TransactionType.MOBILE_APPLE;
+                            break;
+                        case "ANDROID_PAY":
+                            type = TransactionType.MOBILE_ANDROID;
+                            break;
+                    }
+
+                    // show foreign currency info, if the transaction was in a foreign currency
+                    Currency sourceCurrency = Currency.getInstance(cardJSON.getString("sourceCurrency"));
+                    if (sourceCurrency != currency) {
+                        localCurrency = sourceCurrency;
+                        int decimalPlaces = localCurrency.getDefaultFractionDigits();
+                        if (decimalPlaces != 0) {
+                            StringBuilder patternBuilder = new StringBuilder("0.");
+                            for (int j = 0; j < decimalPlaces; j++) {
+                                patternBuilder.append("0");
+                            }
+                            localAmount = new Long(new DecimalFormat(patternBuilder.toString()).format(
+                                    cardJSON.getBigDecimal("sourceAmount")).replace(".", ""));
+                        } else {
+                            localAmount = cardJSON.getLong("sourceAmount");
+                        }
+                    }
+
+                    // settled status
+                    if (cardJSON.getString("status").equals("SETTLED")) {
+                        settled = Instant.ofEpochSecond(0).atZone(ZoneId.of("UTC"));
+                    }
+
+                    // category
+                    if (cardJSON.has("spendingCategory")) {
+                        switch(cardJSON.getString("spendingCategory")) {
+                            case "BILLS_AND_SERVICES":
+                                category = TransactionCategory.BILLS_AND_SERVICES;
+                                break;
+                            case "EATING_OUT":
+                                category = TransactionCategory.EATING_OUT;
+                                break;
+                            case "ENTERTAINMENT":
+                                category = TransactionCategory.ENTERTAINMENT;
+                                break;
+                            case "EXPENSES":
+                                category = TransactionCategory.EXPENSES;
+                                break;
+                            case "GENERAL":
+                                category = TransactionCategory.GENERAL;
+                                break;
+                            case "GROCERIES":
+                                category = TransactionCategory.GROCERIES;
+                                break;
+                            case "SHOPPING":
+                                category = TransactionCategory.SHOPPING;
+                                break;
+                            case "HOLIDAYS":
+                                category = TransactionCategory.ENTERTAINMENT;
+                                break;
+                            case "PAYMENTS":
+                                category = TransactionCategory.GENERAL;
+                                break;
+                            case "TRANSPORT":
+                                category = TransactionCategory.TRANSPORT;
+                                break;
+                            case "LIFESTYLE":
+                                category = TransactionCategory.ENTERTAINMENT;
+                                break;
+                            case "NONE":
+                                category = TransactionCategory.GENERAL;
+                                break;
+                        }
+                    }
+
+                    break;
+
+                case "FASTER_PAYMENTS_IN":
+                    type = TransactionType.FASTER_PAYMENT;
+                    break;
+
+                case "FASTER_PAYMENTS_OUT":
+                    type = TransactionType.FASTER_PAYMENT;
+                    break;
+
+                case "FASTER_PAYMENTS_REVERSAL":
+                    type = TransactionType.FASTER_PAYMENT;
+                    break;
+
+                case "STRIPE_FUNDING":
+                    type = TransactionType.PAYMENT;
+                    break;
+
+                case "INTEREST_PAYMENT":
+                    type = TransactionType.INTEREST;
+                    break;
+
+                case "NOSTRO_DEPOSIT":
+                    type = TransactionType.SWIFT;
+                    break;
+
+                case "OVERDRAFT":
+                    type = TransactionType.TRANSFER;
+                    break;
+            }
 
             Transaction transaction = new Transaction(
                     amount,
                     balance,
+                    category,
+                    counterparty,
                     created,
-                    currency,
+                    declineReason,
                     description,
                     id,
-                    providerId
+                    localAmount,
+                    localCurrency,
+                    mcc,
+                    providerId,
+                    settled,
+                    type
             );
-
             transactions.put(transaction.id, transaction);
             transactionRefs.put(transaction.providerId, transaction.id);
         }
