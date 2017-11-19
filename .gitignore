@@ -1,3 +1,5 @@
+config.properties
+
 # START JAVA GITIGNORE
 # Compiled class file
 *.class

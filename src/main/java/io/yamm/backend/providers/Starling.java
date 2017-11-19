@@ -155,7 +155,7 @@ public class Starling implements BankAccount {
             Long localAmount = null;
             Currency localCurrency = null;
             String mcc = null;
-            String providerId = jsonTransaction.getString("id");;
+            String providerId = jsonTransaction.getString("id");
             ZonedDateTime settled = null;
             TransactionType type = TransactionType.UNKNOWN;
 
