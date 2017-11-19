@@ -6,9 +6,10 @@ import com.mashape.unirest.http.Unirest;
 import com.mashape.unirest.http.exceptions.UnirestException;
 import io.yamm.backend.*;
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.rmi.RemoteException;
 import java.text.DecimalFormat;
 import java.time.Instant;
@@ -115,7 +116,8 @@ public class Starling implements BankAccount {
         if (json.getStatus() == 200) {
             return json;
         } else {
-            throw new RemoteException("Starling API failure: status code " + json.getStatus());
+            throw new RemoteException("Starling API failure: status code " + json.getStatus() + " for endpoint " +
+                    "https://api.starlingbank.com/api/" + endpoint + ".");
         }
     }
 
@@ -243,6 +245,61 @@ public class Starling implements BankAccount {
                     // settled status
                     if (cardJSON.getString("status").equals("SETTLED")) {
                         settled = Instant.ofEpochSecond(0).atZone(ZoneId.of("UTC"));
+                    }
+
+                    // merchant (counterparty)
+                    if (cardJSON.has("merchantId")) {
+                        JSONObject merchantJSON = callEndpoint("v1/merchants/" +
+                                cardJSON.getString("merchantId")).getBody().getObject();
+
+                        Address address = null;
+                        URL icon = null;
+                        String merchantName = null;
+                        URL website = null;
+
+                        // merchant address
+                        if (cardJSON.has("merchantLocationId")) {
+                            JSONObject locationJSON = callEndpoint("v1/merchants/" +
+                                    cardJSON.getString("merchantId") + "/locations/" +
+                                    cardJSON.getString("merchantLocationId")).getBody().getObject();
+
+                            if (locationJSON.has("mastercardMerchantCategoryCode")) {
+                                mcc = String.valueOf(locationJSON.getInt("mastercardMerchantCategoryCode"));
+                            }
+
+                            // this is where we would fill the address in, but at the moment Starling only provices
+                            // a Google Places ID. This is unhelpful!
+                        }
+
+                        if (merchantJSON.has("twitterUsername")) {
+                            try {
+                                String twitterUsername = merchantJSON.getString("twitterUsername").replace("@", "");
+                                icon = new URL("https://twitter.com/" + twitterUsername + "/profile_image");
+                            } catch (MalformedURLException e) {
+                                // TODO: handle this better
+                                icon = null;
+                            }
+                        }
+                        if (merchantJSON.has("name")) {
+                            merchantName = merchantJSON.getString("name");
+                        }
+                        if (merchantJSON.has("website")) {
+                            try {
+                                website = new URL(merchantJSON.getString("website"));
+                            } catch (MalformedURLException e) {
+                                // TODO: handle this better
+                                website = null;
+                            }
+                        }
+
+                        counterparty = new Counterparty(
+                            null,
+                            address,
+                            icon,
+                            merchantName,
+                            null,
+                            website
+                        );
                     }
 
                     // category
