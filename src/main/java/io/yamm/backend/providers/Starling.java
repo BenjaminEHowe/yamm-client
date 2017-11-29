@@ -244,7 +244,7 @@ public class Starling implements BankAccount {
 
                     // settled status
                     if (cardJSON.getString("status").equals("SETTLED")) {
-                        settled = Instant.ofEpochSecond(0).atZone(ZoneId.of("UTC"));
+                        settled = ZonedDateTime.parse("1970-01-01T00:00:00.000Z");
                     }
 
                     // merchant (counterparty)
@@ -348,30 +348,38 @@ public class Starling implements BankAccount {
 
                 case "FASTER_PAYMENTS_IN":
                     type = TransactionType.FASTER_PAYMENT;
+                    settled = created; // settles instantly
                     break;
 
                 case "FASTER_PAYMENTS_OUT":
                     type = TransactionType.FASTER_PAYMENT;
+                    settled = created; // settles instantly
                     break;
 
                 case "FASTER_PAYMENTS_REVERSAL":
                     type = TransactionType.FASTER_PAYMENT;
+                    settled = created; // settles instantly
                     break;
 
                 case "STRIPE_FUNDING":
                     type = TransactionType.PAYMENT;
+                    settled = created; // settles instantly
                     break;
 
                 case "INTEREST_PAYMENT":
                     type = TransactionType.INTEREST;
+                    settled = created; // settles instantly
                     break;
 
                 case "NOSTRO_DEPOSIT":
                     type = TransactionType.SWIFT;
+                    // TODO: verify that the below is true
+                    settled = created; // settles instantly
                     break;
 
                 case "OVERDRAFT":
                     type = TransactionType.TRANSFER;
+                    settled = created; // settles instantly
                     break;
             }
 

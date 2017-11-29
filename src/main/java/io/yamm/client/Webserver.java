@@ -2,6 +2,7 @@ package io.yamm.client;
 
 import fi.iki.elonen.NanoHTTPD;
 import io.yamm.backend.Account;
+import io.yamm.backend.Transaction;
 import io.yamm.backend.UserInterface;
 import io.yamm.backend.YAMM;
 import org.json.JSONArray;
@@ -204,16 +205,52 @@ class Webserver extends NanoHTTPD {
                 }
 
             case "about":
-                switch (session.getMethod()) {
-                    case GET:
-                        json.put("version", yamm.getVersion());
-                        return CORSify(session, newFixedLengthResponse(Response.Status.OK,
-                                "application/json",
-                                json.toString()));
+                if (URIParts.length == 2) {
+                    switch (session.getMethod()) {
+                        case GET:
+                            json.put("version", yamm.getVersion());
+                            return CORSify(session, newFixedLengthResponse(Response.Status.OK,
+                                    "application/json",
+                                    json.toString()));
 
-                    default:
-                        return CORSify(session, MethodNotAllowed());
+                        default:
+                            return CORSify(session, MethodNotAllowed());
+                    }
+                } else {
+                    return CORSify(session, NotFound());
                 }
+
+            case "transactions":
+                if (URIParts.length == 2) {
+                    switch (session.getMethod()) {
+                        case GET:
+                            JSONArray transactions = new JSONArray();
+                            for (Account account : yamm.getAccounts().values()) {
+                                try {
+                                    JSONArray accountTransactions = DataHandler.transactionsToJSON(account.getTransactions());
+                                    for (int i = 0; i < accountTransactions.length(); i++) {
+                                        JSONObject transaction = accountTransactions.getJSONObject(i);
+                                        transaction.put("account", account.getUUID());
+                                        transactions.put(transaction);
+                                    }
+                                } catch (RemoteException e) {
+                                    yamm.raiseException(e);
+                                    return CORSify(session, newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
+                                            "application/json",
+                                            json.toString()));
+                                }
+                            }
+                            return CORSify(session, newFixedLengthResponse(Response.Status.OK,
+                                    "application/json",
+                                    transactions.toString()));
+
+                        default:
+                            return CORSify(session, MethodNotAllowed());
+                    }
+                } else {
+                    return CORSify(session, NotFound());
+                }
+
 
             default:
                 return CORSify(session, NotFound());
@@ -222,7 +259,7 @@ class Webserver extends NanoHTTPD {
 
     private Response CORSify(IHTTPSession session, Response response) {
         String origin = session.getHeaders().get("origin");
-        if (origin.endsWith("yamm.io")) {
+        if (origin != null && origin.endsWith("yamm.io")) {
             response.addHeader("Access-Control-Allow-Origin", origin);
         }
         response.addHeader("Vary", "Origin");
