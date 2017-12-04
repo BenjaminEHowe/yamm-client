@@ -12,4 +12,5 @@ public interface Account {
     Transaction[] getTransactions() throws RemoteException;
     UUID getUUID();
     void overwriteSensitiveData();
+    void setNickname(String newNickname);
 }

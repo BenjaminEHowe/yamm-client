@@ -491,4 +491,8 @@ public class Starling implements BankAccount {
     public void overwriteSensitiveData() {
         accessToken = yamm.generateSecureRandom(accessToken.length);
     }
+
+    public void setNickname(String newNickname) {
+        nickname = newNickname;
+    }
 }

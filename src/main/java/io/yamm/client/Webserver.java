@@ -89,6 +89,15 @@ class Webserver extends NanoHTTPD {
                     json.toString()));
         }
 
+        // handle all OPTIONS requests here, as opposed to per-endpoint
+        if (session.getMethod() == Method.OPTIONS) {
+            Response response = newFixedLengthResponse(Response.Status.OK, "", null);
+            response.addHeader("Access-Control-Allow-Headers", "content-type");
+            response.addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+            response.addHeader("Access-Control-Max-Age", "7200"); // cache for 2 hours
+            return CORSify(session, response);
+        }
+
         // do something!
         switch (URIParts[1]) {
             case "accounts":
@@ -138,6 +147,27 @@ class Webserver extends NanoHTTPD {
                                             "application/json",
                                             json.toString()));
                                 }
+
+                            case PATCH:
+                                Integer contentLength = Integer.parseInt(session.getHeaders().get("content-length"));
+                                byte[] buffer = new byte[contentLength];
+                                try {
+                                    session.getInputStream().read(buffer, 0, contentLength);
+                                    JSONObject patchJSON = new JSONObject(new String(buffer));
+                                    // only supported patch is a new nickname
+                                    if (patchJSON.keySet().size() == 1 && patchJSON.has("nickname")) {
+                                        yamm.getAccounts().get(UUID.fromString(URIParts[2])).setNickname(patchJSON.getString("nickname"));
+                                        return CORSify(session, NoContent());
+                                    } else {
+                                        return CORSify(session, BadRequest());
+                                    }
+                                } catch (IOException e) {
+                                    yamm.raiseException(e);
+                                    return CORSify(session, newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
+                                            "application/json",
+                                            json.toString()));
+                                }
+
 
                             default:
                                 return CORSify(session, MethodNotAllowed());
@@ -257,6 +287,15 @@ class Webserver extends NanoHTTPD {
         }
     }
 
+    private Response BadRequest() {
+        JSONObject json = new JSONObject();
+        json.put("message",
+                "Malformed request (e.g. trying to modify a read-only object or attribute).");
+        return newFixedLengthResponse(Response.Status.BAD_REQUEST,
+                "application/json",
+                json.toString());
+    }
+
     private Response CORSify(IHTTPSession session, Response response) {
         String origin = session.getHeaders().get("origin");
         if (origin != null && origin.endsWith("yamm.io")) {
@@ -281,6 +320,12 @@ class Webserver extends NanoHTTPD {
         return newFixedLengthResponse(Response.Status.NOT_FOUND,
                 "application/json",
                 json.toString());
+    }
+
+    private Response NoContent() {
+        return newFixedLengthResponse(Response.Status.NO_CONTENT,
+                "",
+                null);
     }
 
     private Response NotImplemented() {
