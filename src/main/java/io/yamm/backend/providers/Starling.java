@@ -163,6 +163,11 @@ public class Starling implements BankAccount {
             UUID id = transactionRefs.get(providerId);
             if (id == null) {
                 id = UUID.randomUUID();
+            } else {
+                // if the transaction already exists and has settled, skip it
+                if (transactions.get(id).settled != null) {
+                    continue;
+                }
             }
 
             Long amount = new Long(new DecimalFormat("0.00").format(
