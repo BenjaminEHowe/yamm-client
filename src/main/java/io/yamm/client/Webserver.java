@@ -263,6 +263,7 @@ class Webserver extends NanoHTTPD {
                                         transaction.put("account", account.getUUID());
                                         transactions.put(transaction);
                                     }
+
                                 } catch (RemoteException e) {
                                     yamm.raiseException(e);
                                     return CORSify(session, newFixedLengthResponse(Response.Status.INTERNAL_ERROR,

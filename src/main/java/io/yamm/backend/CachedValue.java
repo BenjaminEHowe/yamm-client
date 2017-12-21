@@ -1,7 +1,5 @@
 package io.yamm.backend;
 
-import java.time.ZonedDateTime;
-
 public class CachedValue<Object, ZonedDateTime> {
     public final Object value;
     public final ZonedDateTime updated;

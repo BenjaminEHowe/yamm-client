@@ -31,7 +31,13 @@ public class YAMM {
         String[] requiredCredentials;
         try {
             name = (String) provider.getDeclaredField("name").get(null);
-            requiredCredentials = (String[]) provider.getDeclaredField("requiredCredentials").get(null);
+            // try to get the required credentials
+            try {
+                requiredCredentials = (String[]) provider.getDeclaredField("requiredCredentials").get(null);
+            } catch (NoSuchFieldException e) {
+                // if not from the class, from the superclass
+                requiredCredentials = (String[]) provider.getSuperclass().getDeclaredField("requiredCredentials").get(null);
+            }
         } catch (IllegalAccessException|NoSuchFieldException e) {
             ui.showException(e);
             return null;

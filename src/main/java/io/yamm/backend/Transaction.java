@@ -18,6 +18,7 @@ public class Transaction {
     public final String mcc; // ISO 18245 merchant category code
     public final String providerId;
     public final ZonedDateTime settled;
+    public final UUID statementId;
     public final TransactionType type;
 
     public Transaction(Long amount,
@@ -33,6 +34,7 @@ public class Transaction {
                        String mcc,
                        String providerId,
                        ZonedDateTime settled,
+                       UUID statementId,
                        TransactionType type) {
         this.amount = amount;
         this.balance = balance;
@@ -47,6 +49,7 @@ public class Transaction {
         this.mcc = mcc;
         this.providerId = providerId;
         this.settled = settled;
+        this.statementId = statementId;
         this.type = type;
     }
 }

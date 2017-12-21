@@ -122,78 +122,11 @@ class DataHandler {
                 // load transaction data and create account
                 for (int i = 0; i < accounts.length(); i++) {
                     JSONObject accountJSON = accounts.getJSONObject(i);
-
-                    // get the account ID
-                    UUID uuid = UUID.fromString(accountJSON.getString("id"));
-
-                    // build the array of transactions
-                    Transaction[] transactions;
                     try {
-                        JSONArray transactionsJSON = new JSONArray(encryptedRead(uuid + ".yamm"));
-                        transactions = new Transaction[transactionsJSON.length()];
-                        // iterate over transactions backwards
-                        for (int j = 0; j < transactions.length; j++) {
-                            transactions[j] = JSONToTransaction(transactionsJSON.getJSONObject(j));
-                        }
-                    } catch (IOException e) {
-                        transactions = new Transaction[0];
-                    }
-
-                    // get the provider class
-                    String providerString = accountJSON.getString("provider");
-                    Class<?> provider;
-                    try {
-                        provider = Class.forName("io.yamm.backend.providers." + providerString);
+                        yamm.addAccount(JSONToAccount(accountJSON));
                     } catch (ClassNotFoundException e) {
-                        gui.showError("Unknown provider \"" + providerString + "\" referenced in save data!");
-                        continue;
+                        gui.showError("Unknown provider \"" + accountJSON.getString("provider") + "\" referenced in save data!");
                     }
-
-                    // load account data from JSON
-                    // credentials
-                    char[][] credentials = new char[accountJSON.getJSONArray("credentials").length()][];
-                    for (int j = 0; j < accountJSON.getJSONArray("credentials").length(); j++) {
-                        credentials[j] = accountJSON.getJSONArray("credentials").getString(j).toCharArray();
-                    }
-                    // account data
-                    Currency currency = Currency.getInstance(accountJSON.getString("currency"));
-                    String nickname = accountJSON.getString("nickname");
-                    if (BankAccount.class.isAssignableFrom(provider)) {
-                        // bank account data
-                        String accountNumber = accountJSON.getString("accountNumber");
-                        String bic = accountJSON.getString("bic");
-                        String iban = accountJSON.getString("iban");
-                        String sortCode = accountJSON.getString("sortCode");
-
-                        // instantiate!
-                        yamm.addAccount((Account) provider.getConstructor(
-                                char[][].class,
-                                String.class,
-                                String.class,
-                                Currency.class,
-                                String.class,
-                                String.class,
-                                String.class,
-                                Transaction[].class,
-                                UUID.class,
-                                YAMM.class)
-                                .newInstance(
-                                        credentials,
-                                        accountNumber,
-                                        bic,
-                                        currency,
-                                        iban,
-                                        nickname,
-                                        sortCode,
-                                        transactions,
-                                        uuid,
-                                        yamm));
-                    } else {
-                        // instantiate Accounts which don't implement BankAccount
-                        // except... we don't have any of them! (yet...)
-                    }
-
-                    // create account from account and transaction data
                 }
             } catch (IllegalAccessException|
                     IOException|
@@ -220,6 +153,8 @@ class DataHandler {
             json.put("bic", ((BankAccount) account).getBIC());
             json.put("iban", ((BankAccount) account).getIBAN());
             json.put("sortCode", ((BankAccount) account).getSortCode());
+        } else if (account instanceof CreditCard) {
+            json.put("statements", statementsToJSON(((CreditCard) account).getStatements()));
         }
 
         return json;
@@ -317,6 +252,72 @@ class DataHandler {
                     gui.showException(e);
                 }
             }
+        }
+    }
+
+    private Account JSONToAccount(JSONObject json) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException, ClassNotFoundException {
+        // get the account ID
+        UUID uuid = UUID.fromString(json.getString("id"));
+
+        // build the array of transactions
+        Transaction[] transactions;
+        try {
+            JSONArray transactionsJSON = new JSONArray(encryptedRead(uuid + ".yamm"));
+            transactions = new Transaction[transactionsJSON.length()];
+            // iterate over transactions backwards
+            for (int j = 0; j < transactions.length; j++) {
+                transactions[j] = JSONToTransaction(transactionsJSON.getJSONObject(j));
+            }
+        } catch (IOException e) {
+            transactions = new Transaction[0];
+        }
+
+        // get the provider class
+        String providerString = json.getString("provider");
+        Class<?> provider = Class.forName("io.yamm.backend.providers." + providerString);
+
+        // load account data from JSON
+        // credentials
+        char[][] credentials = new char[json.getJSONArray("credentials").length()][];
+        for (int j = 0; j < json.getJSONArray("credentials").length(); j++) {
+            credentials[j] = json.getJSONArray("credentials").getString(j).toCharArray();
+        }
+        // account data
+        Currency currency = Currency.getInstance(json.getString("currency"));
+        String nickname = json.getString("nickname");
+        if (BankAccount.class.isAssignableFrom(provider)) {
+            // bank account data
+            String accountNumber = json.getString("accountNumber");
+            String bic = json.getString("bic");
+            String iban = json.getString("iban");
+            String sortCode = json.getString("sortCode");
+
+            // instantiate!
+            return (Account) provider.getConstructor(
+                    char[][].class,
+                    String.class,
+                    String.class,
+                    Currency.class,
+                    String.class,
+                    String.class,
+                    String.class,
+                    Transaction[].class,
+                    UUID.class,
+                    YAMM.class)
+                    .newInstance(
+                            credentials,
+                            accountNumber,
+                            bic,
+                            currency,
+                            iban,
+                            nickname,
+                            sortCode,
+                            transactions,
+                            uuid,
+                            yamm);
+        } else {
+            // the provider doesn't implement a known interface
+            throw new ClassNotFoundException();
         }
     }
 
@@ -461,6 +462,7 @@ class DataHandler {
         String mcc; // ISO 18245 merchant category code
         String providerId;
         ZonedDateTime settled;
+        UUID statementId;
         TransactionType type;
 
         try {
@@ -485,14 +487,14 @@ class DataHandler {
 
         try {
             counterparty = JSONToCounterparty(json.getJSONObject("counterparty"));
-        } catch (JSONException e ) {
+        } catch (JSONException e) {
             // TODO: log this failure (and handle it better)
             counterparty = null;
         }
 
         try {
             created = ZonedDateTime.parse(json.getString("created"));
-        } catch (JSONException e ) {
+        } catch (JSONException e) {
             // TODO: log this failure (and handle it better)
             created = ZonedDateTime.now();
         }
@@ -532,21 +534,27 @@ class DataHandler {
 
         try {
             mcc = json.getString("mcc");
-        } catch (JSONException e ) {
+        } catch (JSONException e) {
             mcc = null;
         }
 
         try {
             providerId = json.getString("providerId");
-        } catch (JSONException e ) {
+        } catch (JSONException e) {
             providerId = null;
         }
 
         try {
             settled = ZonedDateTime.parse(json.getString("settled"));
-        } catch (JSONException e ) {
+        } catch (JSONException e) {
             // TODO: log this failure (and handle it better)
             settled = null;
+        }
+
+        try {
+            statementId = UUID.fromString((json.getString("statementId")));
+        } catch (JSONException e) {
+            statementId = null;
         }
 
         try {
@@ -569,6 +577,7 @@ class DataHandler {
                 mcc,
                 providerId,
                 settled,
+                statementId,
                 type
         );
 
@@ -644,7 +653,38 @@ class DataHandler {
         }
     }
 
-    static JSONObject transactionToJSON(Transaction transaction) throws RemoteException {
+    static JSONObject statementToJSON(Statement statement) {
+        JSONObject json = new JSONObject();
+
+        if (statement.balance != null) {
+            json.put("balance", statement.balance);
+        }
+        if (statement.due != null) {
+            json.put("due", statement.due);
+        }
+        if (statement.id != null) {
+            json.put("id", statement.id);
+        }
+        if (statement.issued != null) {
+            json.put("issued", statement.issued);
+        }
+        if (statement.minimumPayment != null) {
+            json.put("minimumPayment", statement.minimumPayment);
+        }
+
+        return json;
+    }
+
+    static JSONArray statementsToJSON(Statement[] statements) {
+        Collections.reverse(Arrays.asList(statements)); // so the newest transaction is first
+        JSONArray json = new JSONArray();
+        for (Statement statement : statements) {
+            json.put(statementToJSON(statement));
+        }
+        return json;
+    }
+
+    static JSONObject transactionToJSON(Transaction transaction) {
         JSONObject json = new JSONObject();
 
         if (transaction.amount != null) {
@@ -686,6 +726,9 @@ class DataHandler {
         if (transaction.settled != null) {
             json.put("settled", transaction.settled);
         }
+        if (transaction.statementId != null) {
+            json.put("statementId", transaction.statementId);
+        }
         if (transaction.type != null) {
             json.put("type", transaction.type);
         }
@@ -693,7 +736,7 @@ class DataHandler {
         return json;
     }
 
-    static JSONArray transactionsToJSON(Transaction[] transactions) throws RemoteException {
+    static JSONArray transactionsToJSON(Transaction[] transactions) {
         Collections.reverse(Arrays.asList(transactions)); // so the newest transaction is first
         JSONArray json = new JSONArray();
         for (Transaction transaction : transactions) {
