@@ -130,7 +130,20 @@ class GUI implements UserInterface,Runnable {
     }
 
     public char[] requestCharArray(String message) {
-        return JOptionPane.showInputDialog("<html><p style='width:240px'>" + message + "</p></html>").toCharArray();
+        JLabel passwordLabel = new JLabel("<html><p style='width:240px'>" + message + "</p></html>");
+        JPasswordField password = new JPasswordField();
+
+        int result = JOptionPane.showConfirmDialog(
+                null,
+                new Object[]{passwordLabel, password},
+                "Input",
+                JOptionPane.OK_CANCEL_OPTION);
+
+        if (result == JOptionPane.OK_OPTION) {
+            return password.getPassword();
+        } else {
+            return null;
+        }
     }
 
     public String requestString(String message) {
