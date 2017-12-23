@@ -6,6 +6,7 @@ import io.yamm.backend.YAMM;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.ActionEvent;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -132,17 +133,34 @@ class GUI implements UserInterface,Runnable {
     public char[] requestCharArray(String message) {
         JLabel passwordLabel = new JLabel("<html><p style='width:240px'>" + message + "</p></html>");
         JPasswordField password = new JPasswordField();
+        password.addActionListener(new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                password.setEchoChar('Y'); // signal that we closed due to enter
+                password.getRootPane().getParent().setVisible(false);
+            }
+        });
 
-        int result = JOptionPane.showConfirmDialog(
+        int result = JOptionPane.showOptionDialog(
                 null,
                 new Object[]{passwordLabel, password},
                 "Input",
-                JOptionPane.OK_CANCEL_OPTION);
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                new JButton[] {new JButton("OK"), new JButton("Cancel")},
+                null);
 
-        if (result == JOptionPane.OK_OPTION) {
+        if (result == 0) { // OK
             return password.getPassword();
-        } else {
+        } else if (result == 1) { // cancel
             return null;
+        } else { // closed
+            if (password.getEchoChar() == 'Y') { // if we closed due to enter, return the password
+                return password.getPassword();
+            } else {
+                return null;
+            }
         }
     }
 
