@@ -16,6 +16,8 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public abstract class NewDay implements CreditCard {
     private CachedValue<Long, ZonedDateTime> availableToSpend;
@@ -113,6 +115,19 @@ public abstract class NewDay implements CreditCard {
                         .asJson();
             }
 
+            // check portal
+            if (request.getHeaders().getFirst("cookie") != null) {
+                Matcher matcher = Pattern.compile(".*?redirectPortal=(.*?);").
+                        matcher(request.getHeaders().getFirst("cookie") + ";");
+                if (matcher.find()) {
+                    if (!matcher.group(1).equals(getSlug())) {
+                        // if we're somehow on the wrong portal, reauthenticate and try again
+                        authenticate();
+                        return callEndpoint(endpoint, body, false);
+                    }
+                }
+            }
+
             // handle errors
             if (request.getStatus() != 200) {
                 throw new RemoteException("NewDay API failure: status code " + request.getStatus() + " for endpoint " +
@@ -177,8 +192,18 @@ public abstract class NewDay implements CreditCard {
     private void callStatementsEndpoint() throws RemoteException {
         // there isn't actually a single endpoint which gets statements, but for simplicity we'll pretend there is
         // get the dates of the available statements
-        JSONArray statementDatesJSON = callEndpoint("/v1/getStatementDates", "{}")
-                 .getJSONArray("statementDates");
+        JSONArray statementDatesJSON;
+        try {
+            statementDatesJSON = callEndpoint("/v1/getStatementDates", "{}")
+                    .getJSONArray("statementDates");
+        } catch (RemoteException e) {
+            if (e.getMessage().equals("No statements are found for the input account. ")) {
+                this.statements = new CachedValue<>(new LinkedHashMap<>());
+                return;
+            } else {
+                throw e;
+            }
+        }
 
         // convert the JSON to an ArrayList, backwards (so the first element of the ArrayList is the oldest date
         ArrayList<Date> getStatementDates = new ArrayList<>();
