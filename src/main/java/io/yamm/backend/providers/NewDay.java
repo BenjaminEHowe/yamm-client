@@ -29,20 +29,20 @@ public abstract class NewDay implements CreditCard {
     private char[] passcode;
     private char[] password;
     private CachedValue<LinkedHashMap<UUID, Statement>, ZonedDateTime> statements;
-    private Map<String, UUID> transactionRefs = new HashMap<>();
-    private CachedValue<LinkedHashMap<UUID, Transaction>, ZonedDateTime> transactions;
+    private CachedValue<TransactionStore, ZonedDateTime> transactions;
     private char[] username;
     private final UUID uuid;
     private final YAMM yamm;
 
     public static final String[] requiredCredentials = new String[] {"username", "password", "passcode"};
 
-    public NewDay(char[][] credentials, YAMM yamm) {
+    public NewDay(char[][] credentials, YAMM yamm) throws RemoteException {
         this.username = Arrays.copyOf(credentials[0], credentials[0].length);
         this.password = Arrays.copyOf(credentials[1], credentials[1].length);
         this.passcode = Arrays.copyOf(credentials[2], credentials[2].length);
         this.uuid = UUID.randomUUID();
         this.yamm = yamm;
+        authenticate();
     }
 
     protected abstract String getSlug();
@@ -296,39 +296,34 @@ public abstract class NewDay implements CreditCard {
     }
 
     private void callTransactionEndpoint() throws RemoteException {
-        LinkedHashMap<UUID, Transaction> transactions;
+        TransactionStore transactions;
         try {
             transactions = this.transactions.value;
         } catch (NullPointerException e) {
             // if we don't have any transactions yet, just create an empty LinkedHashMap
-            transactions = new LinkedHashMap<>();
+            transactions = new TransactionStore();
         }
         int getStatementIndex;
 
         callStatementsEndpoint(); // make sure our statements are up-to-date (override cache)
         Object[] statementIds = statements.value.keySet().toArray();
 
-        try {
-            UUID newestStatementDownloaded = null;
+        UUID newestStatementDownloaded = null;
 
-            // try to find a statement which we already have
-            for (Map.Entry<UUID, Transaction> t : transactions.entrySet()) {
-                newestStatementDownloaded = t.getValue().statementId;
-                if (newestStatementDownloaded != null) {
-                    break;
-                }
+        // try to find a statement which we already have
+        for (int i = transactions.size() - 1; i >= 0; i--) {
+            newestStatementDownloaded = transactions.get(i).statementId;
+            if (newestStatementDownloaded != null) {
+                break;
             }
+        }
 
+        if (newestStatementDownloaded == null) {
             // if we failed
-            if (newestStatementDownloaded == null) {
-                getStatementIndex = statementIds.length - 1; // get all the statements available
-            } else {
-
-                // get all te statements newer than this one
-                getStatementIndex = Arrays.asList(statementIds).indexOf(newestStatementDownloaded) - 1;
-            }
-        } catch (NullPointerException e) {
-            getStatementIndex = statementIds.length - 1; // if there aren't any transactions, get them all!
+            getStatementIndex = statementIds.length - 1; // get all the statements available
+        } else {
+            // get all te statements newer than this one
+            getStatementIndex = Arrays.asList(statementIds).indexOf(newestStatementDownloaded) - 1;
         }
 
         if (getStatementIndex > 0) {
@@ -348,7 +343,6 @@ public abstract class NewDay implements CreditCard {
                     // ID stuff
                     UUID id = UUID.randomUUID();
                     String providerId = jsonTransaction.getString("tranRefNo");
-                    transactionRefs.put(providerId, id);
 
                     // amount: NewDay reports debits as positive and credits as negative
                     Long amount = -1 * new Long(new DecimalFormat("0.00").format(
@@ -400,7 +394,7 @@ public abstract class NewDay implements CreditCard {
                     TransactionCategory category = TransactionCategory.GENERAL;
                     TransactionType type = TransactionType.UNKNOWN;
 
-                    transactions.put(id, new Transaction(
+                    transactions.add(new Transaction(
                             amount,
                             balance,
                             category,
@@ -531,14 +525,14 @@ public abstract class NewDay implements CreditCard {
         try {
             // cache for 5 minutes
             if (ChronoUnit.SECONDS.between(transactions.updated, ZonedDateTime.now()) < 300) {
-                return transactions.value.values().toArray(new Transaction[transactions.value.size()]);
+                return transactions.value.toArray();
             } else {
                 callTransactionEndpoint();
-                return transactions.value.values().toArray(new Transaction[transactions.value.size()]);
+                return transactions.value.toArray();
             }
         } catch (NullPointerException e) {
             callTransactionEndpoint();
-            return transactions.value.values().toArray(new Transaction[transactions.value.size()]);
+            return transactions.value.toArray();
         }
     }
 
