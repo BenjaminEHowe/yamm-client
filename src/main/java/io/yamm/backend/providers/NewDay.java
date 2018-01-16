@@ -295,129 +295,6 @@ public abstract class NewDay implements CreditCard {
         this.statements = new CachedValue<>(statements);
     }
 
-    private void callTransactionEndpoint() throws RemoteException {
-        TransactionStore transactions;
-        try {
-            transactions = this.transactions.value;
-        } catch (NullPointerException e) {
-            // if we don't have any transactions yet, just create an empty LinkedHashMap
-            transactions = new TransactionStore();
-        }
-        int getStatementIndex;
-
-        callStatementsEndpoint(); // make sure our statements are up-to-date (override cache)
-        Object[] statementIds = statements.value.keySet().toArray();
-
-        UUID newestStatementDownloaded = null;
-
-        // try to find a statement which we already have
-        for (int i = transactions.size() - 1; i >= 0; i--) {
-            newestStatementDownloaded = transactions.get(i).statementId;
-            if (newestStatementDownloaded != null) {
-                break;
-            }
-        }
-
-        if (newestStatementDownloaded == null) {
-            // if we failed
-            getStatementIndex = statementIds.length - 1; // get all the statements available
-        } else {
-            // get all te statements newer than this one
-            getStatementIndex = Arrays.asList(statementIds).indexOf(newestStatementDownloaded) - 1;
-        }
-
-        if (getStatementIndex > 0) {
-            JSONObject body = new JSONObject();
-            body.put("detailFlag", "M");
-            body.put("noOfTransaction", 50);
-            body.put("tranStartNum", 0);
-            for (getStatementIndex = getStatementIndex; getStatementIndex >= 0; getStatementIndex--) {
-                // get the transactions for the given index
-                body.put("tranNbrMonths", getStatementIndex);
-                JSONObject json = callEndpoint("v1/getTransactions", body);
-
-                JSONArray transactionDetails = json.getJSONArray("transactionDetails");
-                for (int i = 0; i < transactionDetails.length(); i++) {
-                    JSONObject jsonTransaction = transactionDetails.getJSONObject(i);
-
-                    // ID stuff
-                    UUID id = UUID.randomUUID();
-                    String providerId = jsonTransaction.getString("tranRefNo");
-
-                    // amount: NewDay reports debits as positive and credits as negative
-                    Long amount = -1 * new Long(new DecimalFormat("0.00").format(
-                            jsonTransaction.getBigDecimal("amount")).replace(".", ""));
-
-                    // created time
-                    String[] createdDateParts = jsonTransaction.getString("effectiveDate").split("/");
-                    ZonedDateTime created = ZonedDateTime.of(
-                            Integer.parseInt(createdDateParts[2]),
-                            Integer.parseInt(createdDateParts[1]),
-                            Integer.parseInt(createdDateParts[0]),
-                            0,
-                            0,
-                            0,
-                            0,
-                            ZoneId.of("UTC")
-                    );
-
-                    // description
-                    String description = jsonTransaction.getString("description");
-
-                    // mcc
-                    String mcc = Integer.toString(jsonTransaction.getInt("mcc"));
-
-                    // settled date
-                    String[] settledDateParts = jsonTransaction.getString("postedDate").split("/");
-                    ZonedDateTime settled = ZonedDateTime.of(
-                            Integer.parseInt(settledDateParts[2]),
-                            Integer.parseInt(settledDateParts[1]),
-                            Integer.parseInt(settledDateParts[0]),
-                            0,
-                            0,
-                            0,
-                            0,
-                            ZoneId.of("UTC")
-                    );
-
-                    // statement ID
-                    UUID statementId = (UUID) statementIds[statementIds.length - getStatementIndex - 1];
-
-                    // for foreign transactions
-                    Long localAmount = null;
-                    Currency localCurrency = null;
-
-                    // constants (for now!)
-                    Long balance = 0L;
-                    Counterparty counterparty = null;
-                    DeclineReason declineReason = null;
-                    TransactionCategory category = TransactionCategory.GENERAL;
-                    TransactionType type = TransactionType.UNKNOWN;
-
-                    transactions.add(new Transaction(
-                            amount,
-                            balance,
-                            category,
-                            counterparty,
-                            created,
-                            declineReason,
-                            description,
-                            id,
-                            localAmount,
-                            localCurrency,
-                            mcc,
-                            providerId,
-                            settled,
-                            statementId,
-                            type
-                    ));
-                }
-            }
-        }
-
-        this.transactions = new CachedValue<>(transactions);
-    }
-
     public Long getAvailableToSpend() throws RemoteException {
         try {
             // cache for 5 minutes
@@ -469,6 +346,7 @@ public abstract class NewDay implements CreditCard {
 
     private String getDecimalFormatPattern() {
         try {
+            //noinspection ResultOfMethodCallIgnored
             decimalFormatPattern.getClass(); // will trigger NPE if applicable
         } catch (NullPointerException e) {
             // if the decimal format pattern hasn't yet been determined, determine it!
@@ -527,17 +405,203 @@ public abstract class NewDay implements CreditCard {
             if (ChronoUnit.SECONDS.between(transactions.updated, ZonedDateTime.now()) < 300) {
                 return transactions.value.toArray();
             } else {
-                callTransactionEndpoint();
+                getTransactionsByStatements();
+                getTransactionsCurrent();
                 return transactions.value.toArray();
             }
         } catch (NullPointerException e) {
-            callTransactionEndpoint();
+            getTransactionsByStatements();
+            getTransactionsCurrent();
             return transactions.value.toArray();
         }
     }
 
+    private void getTransactionsByStatement(int statementIndex, UUID statementId) throws RemoteException {
+        TransactionStore transactions;
+        try {
+            transactions = this.transactions.value;
+        } catch (NullPointerException e) {
+            // if we don't have any transactions yet, just create an empty LinkedHashMap
+            transactions = new TransactionStore();
+        }
+
+        JSONObject body = new JSONObject();
+        body.put("detailFlag", "M");
+        body.put("noOfTransaction", 50);
+        body.put("tranStartNum", 0);
+        body.put("tranNbrMonths", statementIndex);
+        JSONObject json = callEndpoint("v1/getTransactions", body);
+
+        JSONArray transactionDetails = json.getJSONArray("transactionDetails");
+        for (int i = 0; i < transactionDetails.length(); i++) {
+            JSONObject transactionJson = transactionDetails.getJSONObject(i);
+
+            // get a transaction object to add a statementId to
+            Transaction transaction = transactions.get(transactionJson.getString("tranRefNo"));
+            if (transaction == null) {
+                transaction = jsonToTransaction(transactionJson);
+            }
+
+            // create a new transaction object with the correct statementId and add it to the transaction store
+            transactions.add(new Transaction(
+                    transaction.amount,
+                    transaction.balance,
+                    transaction.category,
+                    transaction.counterparty,
+                    transaction.created,
+                    transaction.declineReason,
+                    transaction.description,
+                    transaction.id,
+                    transaction.localAmount,
+                    transaction.localCurrency,
+                    transaction.mcc,
+                    transaction.providerId,
+                    transaction.settled,
+                    statementId,
+                    transaction.type
+            ));
+        }
+
+        // update the object's cached transactions
+        this.transactions = new CachedValue<>(transactions);
+    }
+
+    private void getTransactionsByStatements() throws RemoteException {
+        callStatementsEndpoint(); // make sure our statements are up-to-date (override cache)
+        Object[] statementIds = statements.value.keySet().toArray();
+
+        // try to find a statement which we already have
+        UUID newestStatementDownloaded = null;
+        try {
+            for (int i = transactions.value.size() - 1; i >= 0; i--) {
+                newestStatementDownloaded = transactions.value.get(i).statementId;
+                if (newestStatementDownloaded != null) {
+                    break;
+                }
+            }
+        } catch (NullPointerException e) { // if the transaction store hasn't been initialised, get all statements
+        }
+
+        int getStatementIndex;
+        if (newestStatementDownloaded == null) { // if we failed
+            getStatementIndex = statementIds.length - 1; // get all the statements available
+        } else { // get all the statements newer than this one
+            getStatementIndex = Arrays.asList(statementIds).indexOf(newestStatementDownloaded) - 1;
+        }
+
+        if (getStatementIndex > 0) { // if there are statements we don't (yet) have
+            for (getStatementIndex = getStatementIndex; getStatementIndex >= 0; getStatementIndex--) {
+                UUID statementId = (UUID) statementIds[statementIds.length - getStatementIndex - 1];
+                getTransactionsByStatement(getStatementIndex, statementId);
+            }
+        }
+    }
+
+    private void getTransactionsCurrent() throws RemoteException {
+        TransactionStore transactions;
+        try {
+            transactions = this.transactions.value;
+        } catch (NullPointerException e) {
+            // if we don't have any transactions yet, just create an empty LinkedHashMap
+            transactions = new TransactionStore();
+        }
+
+        JSONObject body = new JSONObject();
+        body.put("detailFlag", "C");
+        body.put("noOfTransaction", 50);
+        body.put("pendingFlag", true); // you would've thought you could set this to "false"... you'd be wrong!
+        body.put("tranStartNum", 0);
+        JSONObject json = callEndpoint("v1/getAllTransactions", body);
+
+        JSONArray transactionDetails = json.getJSONArray("transactionDetails");
+        for (int i = 0; i < transactionDetails.length(); i++) {
+            JSONObject transactionJson = transactionDetails.getJSONObject(i);
+
+            Transaction transaction = transactions.get(transactionJson.getString("tranRefNo"));
+            if (transaction == null) { // if the transaction isn't yet in the transaction store
+                if (transactionJson.get("postedDate") != null) { // and the transaction has cleared
+                    transactions.add(jsonToTransaction(transactionJson)); // add it!
+                }
+            }
+        }
+
+        // update the object's cached transactions
+        this.transactions = new CachedValue<>(transactions);
+    }
+
     public UUID getUUID() {
         return uuid;
+    }
+
+    private Transaction jsonToTransaction(JSONObject json) {
+        // ID stuff
+        UUID id = UUID.randomUUID();
+        String providerId = json.getString("tranRefNo");
+
+        // amount: NewDay reports debits as positive and credits as negative
+        Long amount = -1 * new Long(new DecimalFormat("0.00").format(
+                json.getBigDecimal("amount")).replace(".", ""));
+
+        // created time
+        String[] createdDateParts = json.getString("effectiveDate").split("/");
+        ZonedDateTime created = ZonedDateTime.of(
+                Integer.parseInt(createdDateParts[2]),
+                Integer.parseInt(createdDateParts[1]),
+                Integer.parseInt(createdDateParts[0]),
+                0,
+                0,
+                0,
+                0,
+                ZoneId.of("UTC")
+        );
+
+        // description
+        String description = json.getString("description");
+
+        // mcc
+        String mcc = Integer.toString(json.getInt("mcc"));
+
+        // settled date
+        String[] settledDateParts = json.getString("postedDate").split("/");
+        ZonedDateTime settled = ZonedDateTime.of(
+                Integer.parseInt(settledDateParts[2]),
+                Integer.parseInt(settledDateParts[1]),
+                Integer.parseInt(settledDateParts[0]),
+                0,
+                0,
+                0,
+                0,
+                ZoneId.of("UTC")
+        );
+
+        // for foreign transactions
+        Long localAmount = null;
+        Currency localCurrency = null;
+
+        // constants (for now!)
+        Long balance = 0L;
+        Counterparty counterparty = null;
+        DeclineReason declineReason = null;
+        TransactionCategory category = TransactionCategory.GENERAL;
+        TransactionType type = TransactionType.UNKNOWN;
+
+        return new Transaction(
+                amount,
+                balance,
+                category,
+                counterparty,
+                created,
+                declineReason,
+                description,
+                id,
+                localAmount,
+                localCurrency,
+                mcc,
+                providerId,
+                settled,
+                null, // we have no way of knowing the statementId here
+                type
+        );
     }
 
     public void overwriteSensitiveData() {
@@ -549,64 +613,4 @@ public abstract class NewDay implements CreditCard {
     public void setNickname(String newNickname) {
         nickname = newNickname;
     }
-
-    /*public void XcallAuthenticationEndpoint() throws UnirestException, RemoteException {
-        System.out.println("Test account summary endpoint:");
-        System.out.println(
-                Unirest
-                        .post("https://portal.newdaycards.com/accounts/services/rest/getAccountSummaryData")
-                        .asJson()
-                        .getBody()
-                        .getObject()
-        );
-        System.out.println();
-
-        System.out.println("Test statement dates endpoint:");
-        System.out.println(
-                Unirest
-                        .post("https://portal.newdaycards.com/accounts/services/rest/v1/getStatementDates")
-                        .body("{}")
-                        .asJson()
-                        .getBody()
-                        .getObject()
-        );
-        System.out.println();
-
-        System.out.println("Test statement summary endpoint:");
-        // note: in the body, relativeMonthNumber must be set to an integer between 0 and 5 inclusive, but the value
-        // doesn't appear to impact the results (an illegal value results in "System currently unavailable").
-        System.out.println(
-                Unirest
-                        .post("https://portal.newdaycards.com/accounts/services/rest/v1/getStatementSummaryNew")
-                        .body("{\"relativeMonthNumber\":0, \"stmtDate\":\"05 Dec 2017\"}")
-                        .asJson()
-                        .getBody()
-                        .getObject()
-        );
-        System.out.println();
-
-        System.out.println("Test transactions endpoint (\"current\" - not on a statement yet):");
-        System.out.println(
-                Unirest
-                        .post("https://portal.newdaycards.com/accounts/services/rest/v1/getAllTransactions")
-                        .body("{\"noOfTransaction\":50,\"pendingFlag\":true,\"detailFlag\":\"C\",\"tranStartNum\":0}")
-                        .asJson()
-                        .getBody()
-                        .getObject()
-        );
-        System.out.println();
-
-        System.out.println("Test transactions endpoint (statement):");
-        System.out.println(
-                Unirest
-                        .post("https://portal.newdaycards.com/accounts/services/rest/v1/getTransactions")
-                        .body("{\"noOfTransaction\":50,\"tranNbrMonths\":0,\"detailFlag\":\"M\",\"tranStartNum\":0}")
-                        .asJson()
-                        .getBody()
-                        .getObject()
-        );
-        System.out.println();
-
-        // when the cookie expires the response is: {"errors":[{"code":"FDESU001","message":""}],"status":"error"}
-    }*/
 }
