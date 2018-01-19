@@ -148,7 +148,7 @@ class GUI implements UserInterface,Runnable {
                 JOptionPane.OK_CANCEL_OPTION,
                 JOptionPane.QUESTION_MESSAGE,
                 null,
-                new JButton[] {new JButton("OK"), new JButton("Cancel")},
+                new Object[] {"OK", "Cancel"},
                 null);
 
         if (result == 0) { // OK
