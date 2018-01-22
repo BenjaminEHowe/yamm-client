@@ -1,7 +1,6 @@
 package io.yamm.backend;
 
 import java.net.URL;
-import java.util.UUID;
 
 public class Counterparty {
     public final String accountNumber;

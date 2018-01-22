@@ -11,6 +11,7 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.text.ParseException;
 
 class GUI implements UserInterface,Runnable {
 
@@ -84,6 +85,9 @@ class GUI implements UserInterface,Runnable {
             dh = new DataHandler(gui, yamm);
         } catch (NullPointerException e) { // if crypto couldn't be initialised
             quitWithoutSaving();
+        } catch (ParseException e) {
+            gui.showException(e); // handle this better (as an error showing specifically where the parse error occurred)
+            quitWithoutSaving();
         }
         try {
             new Webserver(gui, yamm);
@@ -91,12 +95,8 @@ class GUI implements UserInterface,Runnable {
             showException(e);
         }
 
-        // listeners etc.
-        trayIcon.addActionListener(e -> JOptionPane.showMessageDialog(null,
-                "This dialog box is run from System Tray"));
-
         aboutItem.addActionListener(e -> JOptionPane.showMessageDialog(null,
-                "This dialog box is run from the About menu item"));
+                "YAMM client version 0.1-alpha.7."));
 
         FAQItem.addActionListener(e -> {
             try {

@@ -2,7 +2,6 @@ package io.yamm.client;
 
 import fi.iki.elonen.NanoHTTPD;
 import io.yamm.backend.Account;
-import io.yamm.backend.Transaction;
 import io.yamm.backend.UserInterface;
 import io.yamm.backend.YAMM;
 import org.json.JSONArray;
@@ -152,6 +151,7 @@ class Webserver extends NanoHTTPD {
                                 Integer contentLength = Integer.parseInt(session.getHeaders().get("content-length"));
                                 byte[] buffer = new byte[contentLength];
                                 try {
+                                    //noinspection ResultOfMethodCallIgnored
                                     session.getInputStream().read(buffer, 0, contentLength);
                                     JSONObject patchJSON = new JSONObject(new String(buffer));
                                     // only supported patch is a new nickname

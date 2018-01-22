@@ -18,6 +18,8 @@ import java.nio.charset.StandardCharsets;
 import java.rmi.RemoteException;
 import java.security.SecureRandom;
 import java.security.Security;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.time.ZonedDateTime;
 import java.util.*;
 
@@ -28,7 +30,7 @@ class DataHandler {
     private Properties properties = new Properties();
     private final YAMM yamm;
 
-    DataHandler(GUI gui, YAMM yamm) {
+    DataHandler(GUI gui, YAMM yamm) throws ParseException {
         this.gui = gui;
         this.yamm = yamm;
         Security.setProperty("crypto.policy", "unlimited");
@@ -82,10 +84,9 @@ class DataHandler {
                 } else {
                     password = gui.requestCharArray("Please enter a password (minimum length 12 characters) to use to encrypt your YAMM data:");
                 }
+
                 if (password.length < 12) {
                     gui.showError("Password must be greater than 12 characters!");
-                } else {
-                    break;
                 }
             } catch (NullPointerException e) {
                 if (dataExists) {
@@ -155,6 +156,8 @@ class DataHandler {
             json.put("sortCode", ((BankAccount) account).getSortCode());
         } else if (account instanceof CreditCard) {
             json.put("statements", statementsToJSON(((CreditCard) account).getStatements()));
+            json.put("nextStatement", ((CreditCard) account).getNextStatementDate());
+            json.put("creditLimit", ((CreditCard) account).getCreditLimit());
         }
 
         return json;
@@ -255,21 +258,16 @@ class DataHandler {
         }
     }
 
-    private Account JSONToAccount(JSONObject json) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException, ClassNotFoundException {
+    private Account JSONToAccount(JSONObject json) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException, ClassNotFoundException, ParseException {
         // get the account ID
         UUID uuid = UUID.fromString(json.getString("id"));
 
         // build the array of transactions
-        Transaction[] transactions;
-        try {
-            JSONArray transactionsJSON = new JSONArray(encryptedRead(uuid + ".yamm"));
-            transactions = new Transaction[transactionsJSON.length()];
-            // iterate over transactions backwards
-            for (int j = 0; j < transactions.length; j++) {
-                transactions[j] = JSONToTransaction(transactionsJSON.getJSONObject(j));
-            }
-        } catch (IOException e) {
-            transactions = new Transaction[0];
+        JSONArray transactionsJSON = json.getJSONArray("transactions");
+        Transaction[] transactions = new Transaction[transactionsJSON.length()];
+        // iterate over transactions
+        for (int i = 0; i < transactions.length; i++) {
+            transactions[i] = JSONToTransaction(transactionsJSON.getJSONObject(i));
         }
 
         // get the provider class
@@ -279,12 +277,14 @@ class DataHandler {
         // load account data from JSON
         // credentials
         char[][] credentials = new char[json.getJSONArray("credentials").length()][];
-        for (int j = 0; j < json.getJSONArray("credentials").length(); j++) {
-            credentials[j] = json.getJSONArray("credentials").getString(j).toCharArray();
+        for (int i = 0; i < json.getJSONArray("credentials").length(); i++) {
+            credentials[i] = json.getJSONArray("credentials").getString(i).toCharArray();
         }
         // account data
         Currency currency = Currency.getInstance(json.getString("currency"));
         String nickname = json.getString("nickname");
+
+        // interface specific data and instantiation
         if (BankAccount.class.isAssignableFrom(provider)) {
             // bank account data
             String accountNumber = json.getString("accountNumber");
@@ -315,6 +315,32 @@ class DataHandler {
                             transactions,
                             uuid,
                             yamm);
+        } else if (CreditCard.class.isAssignableFrom(provider)) {
+            // credit card statements
+            JSONArray statementsJSON = json.getJSONArray("statements");
+            Statement[] statements = new Statement[statementsJSON.length()];
+            // iterate over transactions backwards
+            for (int i = 0; i < statements.length; i++) {
+                statements[i] = JSONToStatement(statementsJSON.getJSONObject(i));
+            }
+
+            return (Account) provider.getConstructor(
+                    char[][].class,
+                    Currency.class,
+                    String.class,
+                    Statement[].class,
+                    Transaction[].class,
+                    UUID.class,
+                    YAMM.class)
+                    .newInstance(
+                            credentials,
+                            currency,
+                            nickname,
+                            statements,
+                            transactions,
+                            uuid,
+                            yamm
+                    );
         } else {
             // the provider doesn't implement a known interface
             throw new ClassNotFoundException();
@@ -445,6 +471,18 @@ class DataHandler {
             name,
             sortCode,
             website
+        );
+    }
+
+    private Statement JSONToStatement(JSONObject json) throws ParseException {
+        SimpleDateFormat simpleDateFormat = new SimpleDateFormat("EEE MMM d HH:mm:ss zzz yyyy");
+        return new Statement(
+                json.getLong("balance"),
+                simpleDateFormat.parse(json.getString("due")),
+                UUID.fromString(json.getString("id")),
+                simpleDateFormat.parse(json.getString("issued")),
+                json.getLong("minimumPayment"),
+                json.getLong("previousBalance")
         );
     }
 
@@ -592,7 +630,7 @@ class DataHandler {
         saveProperties();
     }
 
-    private void saveData() { // TODO: implement this
+    private void saveData() {
         JSONArray accounts = new JSONArray();
         for(Map.Entry<UUID, Account> account : yamm.getAccounts().entrySet()) {
             try {
@@ -601,7 +639,13 @@ class DataHandler {
 
                 // get the account credentials using reflection
                 @SuppressWarnings("JavaReflectionMemberAccess") // intellij gets it wrong! (ish...)
-                Method getCredentials = account.getValue().getClass().getDeclaredMethod("getCredentials");
+                Method getCredentials;
+                try {
+                    getCredentials = account.getValue().getClass().getDeclaredMethod("getCredentials");
+                } catch (NoSuchMethodException e) {
+                    // class didn't have getCredentials, so it must be inherited, so get credentials from superclass
+                    getCredentials = account.getValue().getClass().getSuperclass().getDeclaredMethod("getCredentials");
+                }
                 getCredentials.setAccessible(true);
 
                 // add the credentials to the JSON
@@ -612,16 +656,11 @@ class DataHandler {
                 }
                 accountJson.put("credentials", credentialsJSON);
 
-                // add account data to the "accounts" file
+                // add the transactions to the JSON
+                accountJson.put("transactions", transactionsToJSON(account.getValue().getTransactions()));
+
+                // add JSON to the "accounts" file
                 accounts.put(accountJson);
-
-                // add data on the account transactions to an account-specific file
-                JSONArray transactions = transactionsToJSON(account.getValue().getTransactions());
-
-                // save the account-specific file
-                encryptedWrite(
-                        account.getValue().getUUID().toString() + ".yamm",
-                        transactions.toString());
             } catch (IllegalAccessException|
                     InvocationTargetException|
                     NoSuchMethodException|
@@ -670,6 +709,9 @@ class DataHandler {
         }
         if (statement.minimumPayment != null) {
             json.put("minimumPayment", statement.minimumPayment);
+        }
+        if (statement.previousBalance != null) {
+            json.put("previousBalance", statement.previousBalance);
         }
 
         return json;

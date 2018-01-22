@@ -3,7 +3,6 @@ package io.yamm.backend;
 import com.mashape.unirest.http.Unirest;
 
 import java.lang.reflect.InvocationTargetException;
-import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.util.*;
 import java.util.concurrent.CancellationException;

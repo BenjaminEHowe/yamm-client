@@ -42,7 +42,7 @@ public class TransactionStore {
 
     public Transaction get(int index) {
         sortTransactions();
-        return transactions.get((UUID) transactionOrder.get(index)[1]);
+        return transactions.get(transactionOrder.get(index)[1]);
     }
 
     public Transaction get(String providerId) {

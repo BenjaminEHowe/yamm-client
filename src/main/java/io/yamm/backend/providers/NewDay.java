@@ -6,6 +6,7 @@ import com.mashape.unirest.http.Unirest;
 import com.mashape.unirest.http.exceptions.UnirestException;
 import io.yamm.backend.*;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.rmi.RemoteException;
@@ -34,6 +35,7 @@ public abstract class NewDay implements CreditCard {
     private final UUID uuid;
     private final YAMM yamm;
 
+    @SuppressWarnings("unused") // accessed via reflection
     public static final String[] requiredCredentials = new String[] {"username", "password", "passcode"};
 
     public NewDay(char[][] credentials, YAMM yamm) throws RemoteException {
@@ -42,6 +44,37 @@ public abstract class NewDay implements CreditCard {
         this.passcode = Arrays.copyOf(credentials[2], credentials[2].length);
         this.uuid = UUID.randomUUID();
         this.yamm = yamm;
+        authenticate();
+    }
+
+    public NewDay(char[][] credentials,
+                  @SuppressWarnings("unused") Currency currency, // TODO: for now, ignore currency (but this should change in the future!)
+                  String nickname,
+                  Statement[] statements,
+                  Transaction[] transactions,
+                  UUID uuid,
+                  YAMM yamm) throws RemoteException {
+        this.username = Arrays.copyOf(credentials[0], credentials[0].length);
+        this.password = Arrays.copyOf(credentials[1], credentials[1].length);
+        this.passcode = Arrays.copyOf(credentials[2], credentials[2].length);
+
+        this.nickname = nickname;
+
+        LinkedHashMap<UUID, Statement> statementsLinkedHashMap = new LinkedHashMap<>();
+        for (int i = statements.length -1; i >= 0; i--) {
+            statementsLinkedHashMap.put(statements[i].id, statements[i]);
+        }
+        this.statements = new CachedValue<>(statementsLinkedHashMap);
+
+        TransactionStore transactionStore = new TransactionStore();
+        for (int i = transactions.length - 1; i >= 0; i--) {
+            transactionStore.add(transactions[i]);
+        }
+        this.transactions = new CachedValue<>(transactionStore);
+
+        this.uuid = uuid;
+        this.yamm = yamm;
+
         authenticate();
     }
 
@@ -325,6 +358,11 @@ public abstract class NewDay implements CreditCard {
         }
     }
 
+    @SuppressWarnings("unused") // accessed via reflection
+    private char[][] getCredentials() {
+        return new char[][] {username, password, passcode};
+    }
+
     public Long getCreditLimit() throws RemoteException {
         try {
             // cache for 1 hour
@@ -490,7 +528,7 @@ public abstract class NewDay implements CreditCard {
         }
 
         if (getStatementIndex > 0) { // if there are statements we don't (yet) have
-            for (getStatementIndex = getStatementIndex; getStatementIndex >= 0; getStatementIndex--) {
+            for (; getStatementIndex >= 0; getStatementIndex--) {
                 UUID statementId = (UUID) statementIds[statementIds.length - getStatementIndex - 1];
                 getTransactionsByStatement(getStatementIndex, statementId);
             }
@@ -517,11 +555,13 @@ public abstract class NewDay implements CreditCard {
         for (int i = 0; i < transactionDetails.length(); i++) {
             JSONObject transactionJson = transactionDetails.getJSONObject(i);
 
-            Transaction transaction = transactions.get(transactionJson.getString("tranRefNo"));
-            if (transaction == null) { // if the transaction isn't yet in the transaction store
-                if (transactionJson.get("postedDate") != null) { // and the transaction has cleared
+            try {
+                Transaction transaction = transactions.get(transactionJson.getString("tranRefNo"));
+                if (transaction == null) { // if the transaction isn't yet in the transaction store
                     transactions.add(jsonToTransaction(transactionJson)); // add it!
                 }
+            } catch (JSONException e) {
+                // transaction has not yet cleared, so will be ignored
             }
         }
 
