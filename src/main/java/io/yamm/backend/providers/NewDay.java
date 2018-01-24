@@ -14,6 +14,7 @@ import java.text.DecimalFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -592,7 +593,7 @@ public abstract class NewDay implements CreditCard {
                 0,
                 0,
                 0,
-                ZoneId.of("UTC")
+                ZoneOffset.ofHours(0)
         );
 
         // description
@@ -611,7 +612,7 @@ public abstract class NewDay implements CreditCard {
                 0,
                 0,
                 0,
-                ZoneId.of("UTC")
+                ZoneOffset.ofHours(0)
         );
 
         // for foreign transactions
