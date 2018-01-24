@@ -96,7 +96,7 @@ class GUI implements UserInterface,Runnable {
         }
 
         aboutItem.addActionListener(e -> JOptionPane.showMessageDialog(null,
-                "YAMM client version 0.1-alpha.7."));
+                "YAMM client version 0.1-alpha.8."));
 
         FAQItem.addActionListener(e -> {
             try {
