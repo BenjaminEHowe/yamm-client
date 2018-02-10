@@ -149,37 +149,31 @@ public class Starling implements BankAccount {
         for (int i = jsonTransactions.length() - 1; i >= 0; --i) {
             JSONObject jsonTransaction = jsonTransactions.getJSONObject(i);
 
+            // try to find an existing transaction
+            String providerId = jsonTransaction.getString("id");
+            UUID id = transactionRefs.get(providerId);
+            if (id == null) {
+                id = UUID.randomUUID();
+            } else {
+                // if the transaction already exists, skip it
+                continue;
+            }
+
             TransactionCategory category = TransactionCategory.GENERAL;
             Counterparty counterparty = null;
             DeclineReason declineReason = null;
             Long localAmount = null;
             Currency localCurrency = null;
             String mcc = null;
-            String providerId = jsonTransaction.getString("id");
             ZonedDateTime settled = null;
             TransactionType type = TransactionType.UNKNOWN;
 
-            // try to find an existing transaction
-            UUID id = transactionRefs.get(providerId);
-            if (id == null) {
-                id = UUID.randomUUID();
-            } else {
-                // if the transaction already exists and has settled, skip it
-                if (transactions.get(id).settled != null) {
-                    continue;
-                }
-            }
-
             Long amount = new Long(new DecimalFormat("0.00").format(
                     jsonTransaction.getBigDecimal("amount")).replace(".", ""));
-
             Long balance = new Long(new DecimalFormat("0.00").format(
                     jsonTransaction.getBigDecimal("balance")).replace(".", ""));
-
             ZonedDateTime created = ZonedDateTime.parse(jsonTransaction.getString("created"));
-
             String description = jsonTransaction.getString("narrative");
-
 
             switch (jsonTransaction.getString("source")) {
                 case "DIRECT_CREDIT":
@@ -202,6 +196,14 @@ public class Starling implements BankAccount {
                     type = TransactionType.CARD;
 
                     JSONObject cardJSON = callEndpoint("v1/transactions/mastercard/" + providerId).getBody().getObject();
+
+                    // settled status
+                    if (cardJSON.getString("status").equals("SETTLED")) {
+                        settled = ZonedDateTime.parse("1970-01-01T00:00:00.000Z");
+                    } else {
+                        // skip pending transactions; see https://github.com/BenjaminEHowe/yamm-client/issues/6
+                        continue;
+                    }
 
                     switch(cardJSON.getString("mastercardTransactionMethod")) {
                         case "CONTACTLESS":
@@ -245,11 +247,6 @@ public class Starling implements BankAccount {
                         } else {
                             localAmount = cardJSON.getLong("sourceAmount");
                         }
-                    }
-
-                    // settled status
-                    if (cardJSON.getString("status").equals("SETTLED")) {
-                        settled = ZonedDateTime.parse("1970-01-01T00:00:00.000Z");
                     }
 
                     // merchant (counterparty)
@@ -298,12 +295,12 @@ public class Starling implements BankAccount {
                         }
 
                         counterparty = new Counterparty(
-                            null,
-                            address,
-                            icon,
-                            merchantName,
-                            null,
-                            website
+                                null,
+                                address,
+                                icon,
+                                merchantName,
+                                null,
+                                website
                         );
                     }
 
