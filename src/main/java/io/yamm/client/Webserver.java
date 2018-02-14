@@ -4,17 +4,17 @@ import fi.iki.elonen.NanoHTTPD;
 import io.yamm.backend.Account;
 import io.yamm.backend.UserInterface;
 import io.yamm.backend.YAMM;
+import org.apache.http.HttpException;
+import org.apache.http.auth.InvalidCredentialsException;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.rmi.RemoteException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.*;
-import java.util.concurrent.CancellationException;
 
 class Webserver extends NanoHTTPD {
     private byte[] authHash;
@@ -55,7 +55,7 @@ class Webserver extends NanoHTTPD {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] candidateAuthHash = digest.digest(session.getParameters().get("auth").get(0).getBytes(StandardCharsets.US_ASCII));
             if (!Arrays.equals(candidateAuthHash, authHash)) {
-                json.put("message", "Key not authorised.");
+                json.put("message", "Key not authorised");
                 return CORSify(session, newFixedLengthResponse(Response.Status.FORBIDDEN,
                         "application/json",
                         json.toString()));
@@ -66,7 +66,7 @@ class Webserver extends NanoHTTPD {
                     "application/json",
                     json.toString()));
         } catch (NullPointerException e) {
-            json.put("message", "Key not supplied.");
+            json.put("message", "Key not supplied");
             return CORSify(session, newFixedLengthResponse(Response.Status.UNAUTHORIZED,
                     "application/json",
                     json.toString()));
@@ -74,7 +74,7 @@ class Webserver extends NanoHTTPD {
 
         // for now, only support API v1
         if (!URIParts[0].equals("v1")) {
-            json.put("message", "Only API v1 is supported.");
+            json.put("message", "Only API v1 is supported");
             return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
                     "application/json",
                     json.toString()));
@@ -82,7 +82,7 @@ class Webserver extends NanoHTTPD {
 
         // check the URI contains an endpoint
         if (URIParts.length < 2) {
-            json.put("message", "Endpoint not specified.");
+            json.put("message", "Endpoint not specified");
             return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
                     "application/json",
                     json.toString()));
@@ -113,11 +113,11 @@ class Webserver extends NanoHTTPD {
                                             transactions.toString()));
                                 } catch (NullPointerException e) {
                                     yamm.raiseException(e);
-                                    json.put("message", "The requested account was not found.");
+                                    json.put("message", "The requested account was not found");
                                     return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
                                             "application/json",
                                             json.toString()));
-                                } catch (RemoteException e) {
+                                } catch (HttpException e) {
                                     yamm.raiseException(e);
                                     return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
                                             "application/json",
@@ -136,11 +136,11 @@ class Webserver extends NanoHTTPD {
                                             "application/json",
                                             account.toString()));
                                 } catch (NullPointerException e) {
-                                    json.put("message", "The requested account was not found.");
+                                    json.put("message", "The requested account was not found");
                                     return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
                                             "application/json",
                                             json.toString()));
-                                } catch (RemoteException e) {
+                                } catch (HttpException e) {
                                     yamm.raiseException(e);
                                     return CORSify(session, newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
                                             "application/json",
@@ -181,7 +181,7 @@ class Webserver extends NanoHTTPD {
                                 return CORSify(session, newFixedLengthResponse(Response.Status.OK,
                                         "application/json",
                                         accounts.toString()));
-                            } catch (RemoteException e) {
+                            } catch (HttpException e) {
                                 yamm.raiseException(e);
                                 return CORSify(session, newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
                                         "application/json",
@@ -208,23 +208,29 @@ class Webserver extends NanoHTTPD {
                         try {
                             String id = yamm.addAccount(
                                     new JSONObject(map.get("postData")).getString("provider")).toString();
-                            json.put("message", "Account " + id + " created.");
+                            json.put("message", "Account added");
+                            json.put("technical_message", "Account " + id + " added");
                             return CORSify(session, newFixedLengthResponse(Response.Status.CREATED,
                                     "application/json",
                                     json.toString()));
-                        } catch (CancellationException e) {
-                            json.put("message", "User aborted account request.");
-                            return CORSify(session, newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
+                        } catch (NullPointerException e) {
+                            json.put("message", "Canceled");
+                            return CORSify(session, newFixedLengthResponse(Response.Status.OK,
+                                    "application/json",
+                                    json.toString()));
+                        } catch (InvalidCredentialsException e) {
+                            json.put("message", e.getMessage());
+                            return CORSify(session, newFixedLengthResponse(Response.Status.FORBIDDEN,
                                     "application/json",
                                     json.toString()));
                         } catch (ClassNotFoundException e) {
-                            json.put("message", "The requested provider was not found.");
+                            json.put("message", "The requested provider was not found");
                             return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
                                     "application/json",
                                     json.toString()));
                         } catch (Exception e) {
                             new Thread(() -> ui.showException(e)).start();
-                            json.put("message", "Unknown exception.");
+                            json.put("message", "Unknown exception");
                             return CORSify(session, newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
                                     "application/json",
                                     json.toString()));
@@ -264,7 +270,7 @@ class Webserver extends NanoHTTPD {
                                         transactions.put(transaction);
                                     }
 
-                                } catch (RemoteException e) {
+                                } catch (HttpException e) {
                                     yamm.raiseException(e);
                                     return CORSify(session, newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
                                             "application/json",
@@ -317,7 +323,7 @@ class Webserver extends NanoHTTPD {
 
     private Response NotFound() {
         JSONObject json = new JSONObject();
-        json.put("message", "Endpoint not found.");
+        json.put("message", "Endpoint not found");
         return newFixedLengthResponse(Response.Status.NOT_FOUND,
                 "application/json",
                 json.toString());

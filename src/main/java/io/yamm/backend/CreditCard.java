@@ -1,10 +1,11 @@
 package io.yamm.backend;
 
-import java.rmi.RemoteException;
+import org.apache.http.HttpException;
+
 import java.util.Date;
 
 public interface CreditCard extends Account {
-    Long getCreditLimit() throws RemoteException;
-    Date getNextStatementDate() throws RemoteException;
-    Statement[] getStatements() throws RemoteException;
+    Long getCreditLimit() throws HttpException;
+    Date getNextStatementDate() throws HttpException;
+    Statement[] getStatements() throws HttpException;
 }

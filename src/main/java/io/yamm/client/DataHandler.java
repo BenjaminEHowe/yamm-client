@@ -2,6 +2,7 @@ package io.yamm.client;
 
 import com.neovisionaries.i18n.CountryCode;
 import io.yamm.backend.*;
+import org.apache.http.HttpException;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.jasypt.encryption.pbe.StandardPBEStringEncryptor;
 import org.jasypt.exceptions.EncryptionOperationNotPossibleException;
@@ -15,7 +16,6 @@ import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.rmi.RemoteException;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.text.ParseException;
@@ -139,7 +139,7 @@ class DataHandler {
         }
     }
 
-    static JSONObject accountToJSON(Account account) throws RemoteException {
+    static JSONObject accountToJSON(Account account) throws HttpException {
         JSONObject json = new JSONObject();
 
         json.put("id", account.getUUID());
@@ -163,7 +163,7 @@ class DataHandler {
         return json;
     }
 
-    static JSONArray accountsToJSON(Map<UUID, Account> accounts) throws RemoteException {
+    static JSONArray accountsToJSON(Map<UUID, Account> accounts) throws HttpException {
         JSONArray json = new JSONArray();
         for (Map.Entry<UUID, Account> account : accounts.entrySet()) {
             json.put(accountToJSON(account.getValue()));
@@ -664,7 +664,7 @@ class DataHandler {
             } catch (IllegalAccessException|
                     InvocationTargetException|
                     NoSuchMethodException|
-                    RemoteException e) {
+                    HttpException e) {
                 yamm.raiseException(e);
             }
         }

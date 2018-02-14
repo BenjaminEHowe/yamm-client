@@ -5,18 +5,21 @@ import com.mashape.unirest.http.JsonNode;
 import com.mashape.unirest.http.Unirest;
 import com.mashape.unirest.http.exceptions.UnirestException;
 import io.yamm.backend.*;
+import org.apache.http.HttpException;
+import org.apache.http.auth.InvalidCredentialsException;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.rmi.RemoteException;
 import java.text.DecimalFormat;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @SuppressWarnings("unused") // instantiated by YAMM by reflection
 public class Starling implements BankAccount {
@@ -37,11 +40,26 @@ public class Starling implements BankAccount {
     public static final String name = "Starling Bank";
     public static final String[] requiredCredentials = new String[] {"personal access token"};
 
-    public Starling(char[][] credentials, YAMM yamm) throws RemoteException {
+    public Starling(char[][] credentials, YAMM yamm) throws HttpException {
         accessToken = Arrays.copyOf(credentials[0], credentials[0].length);
         uuid = UUID.randomUUID();
         this.yamm = yamm;
-        callAccountEndpoint();
+        try {
+            callAccountEndpoint();
+        } catch (HttpException e) {
+            String pattern = "Starling API failure: status code (\\d{3})";
+            Pattern r = Pattern.compile(pattern);
+            Matcher m = r.matcher(e.getMessage());
+            if (m.find()) {
+                int statusCode = Integer.parseInt(m.group(1));
+                if (statusCode == 403) { // token was invalid
+                    throw new InvalidCredentialsException("Invalid personal access token");
+                }
+            }
+
+            // not a clue what went wrong, rethrow
+            throw e;
+        }
     }
 
     public Starling(char[][] credentials,
@@ -74,7 +92,7 @@ public class Starling implements BankAccount {
                 Instant.ofEpochSecond(0).atZone(ZoneId.of("UTC")));
     }
 
-    private void callAccountEndpoint() throws RemoteException {
+    private void callAccountEndpoint() throws HttpException {
         JSONObject json = callEndpoint("v1/accounts").getBody().getObject();
         nickname = json.getString("name");
         accountNumber = json.getString("accountNumber");
@@ -83,7 +101,7 @@ public class Starling implements BankAccount {
         bic = json.getString("bic");
     }
 
-    private void callBalanceEndpoint() throws RemoteException {
+    private void callBalanceEndpoint() throws HttpException {
         JSONObject json = callEndpoint("v1/accounts/balance").getBody().getObject();
 
         // set currency
@@ -100,7 +118,7 @@ public class Starling implements BankAccount {
                         json.getBigDecimal("clearedBalance")).replace(".", "")));
     }
 
-    private HttpResponse<JsonNode> callEndpoint(String endpoint) throws RemoteException {
+    private HttpResponse<JsonNode> callEndpoint(String endpoint) throws HttpException {
         // make request
         HttpResponse<JsonNode> json;
         try {
@@ -109,30 +127,30 @@ public class Starling implements BankAccount {
                     .asJson();
         } catch (UnirestException e) {
             // TODO: handle this better (connection timeouts etc.)
-            throw new RemoteException("UnirestException", e);
+            throw new HttpException("UnirestException", e);
         }
 
         // check status was 200 OK
         if (json.getStatus() == 200) {
             return json;
         } else {
-            throw new RemoteException("Starling API failure: status code " + json.getStatus() + " for endpoint " +
+            throw new HttpException("Starling API failure: status code " + json.getStatus() + " for endpoint " +
                     "https://api.starlingbank.com/api/" + endpoint + ".");
         }
     }
 
-    private void callTransactionEndpoint() throws RemoteException {
+    private void callTransactionEndpoint() throws HttpException {
         try {
             // TODO: improve this to handle transactions which take a while to settle
             Transaction newestTransaction = transactions.value.entrySet().iterator().next().getValue();
-            callTransactionEndpoint(newestTransaction.created.minusDays(21), ZonedDateTime.now());
+            callTransactionEndpoint(newestTransaction.created.minusDays(14), ZonedDateTime.now());
         } catch (NoSuchElementException|NullPointerException e) {
             // by default, get transactions from the epoch to now
             callTransactionEndpoint(Instant.ofEpochSecond(0).atZone(ZoneId.of("UTC")), ZonedDateTime.now());
         }
     }
 
-    private void callTransactionEndpoint(ZonedDateTime from, ZonedDateTime to) throws RemoteException {
+    private void callTransactionEndpoint(ZonedDateTime from, ZonedDateTime to) throws HttpException {
         String fromStr = from.getYear() + "-" + String.format("%02d", from.getMonthValue()) + "-" + String.format("%02d", from.getDayOfMonth());
         String toStr = to.getYear() + "-" + String.format("%02d", to.getMonthValue()) + "-" + String.format("%02d", to.getDayOfMonth());
         JSONObject json = callEndpoint("v1/transactions?from=" + fromStr + "&to=" + toStr).getBody().getObject();
@@ -375,7 +393,6 @@ public class Starling implements BankAccount {
 
                 case "NOSTRO_DEPOSIT":
                     type = TransactionType.SWIFT;
-                    // TODO: verify that the below is true
                     settled = created; // settles instantly
                     break;
 
@@ -413,7 +430,7 @@ public class Starling implements BankAccount {
         return accountNumber;
     }
 
-    public Long getAvailableToSpend() throws RemoteException {
+    public Long getAvailableToSpend() throws HttpException {
         try {
             // cache for 60 seconds
             if (ChronoUnit.SECONDS.between(availableToSpend.updated, ZonedDateTime.now()) < 60) {
@@ -428,7 +445,7 @@ public class Starling implements BankAccount {
         }
     }
 
-    public Long getBalance() throws RemoteException {
+    public Long getBalance() throws HttpException {
         try {
             // cache for 60 seconds
             if (ChronoUnit.SECONDS.between(balance.updated, ZonedDateTime.now()) < 60) {
@@ -451,7 +468,7 @@ public class Starling implements BankAccount {
         return new char[][] {accessToken};
     }
 
-    public Currency getCurrency() throws RemoteException {
+    public Currency getCurrency() throws HttpException {
         try {
             return currency;
         } catch (NullPointerException e) {
@@ -472,7 +489,7 @@ public class Starling implements BankAccount {
         return sortCode;
     }
 
-    public Transaction[] getTransactions() throws RemoteException {
+    public Transaction[] getTransactions() throws HttpException {
         try {
             // cache for 60 seconds
             if (ChronoUnit.SECONDS.between(transactions.updated, ZonedDateTime.now()) < 60) {

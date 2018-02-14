@@ -5,15 +5,15 @@ import com.mashape.unirest.http.JsonNode;
 import com.mashape.unirest.http.Unirest;
 import com.mashape.unirest.http.exceptions.UnirestException;
 import io.yamm.backend.*;
+import org.apache.http.HttpException;
+import org.apache.http.auth.InvalidCredentialsException;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.rmi.RemoteException;
 import java.text.DecimalFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
@@ -39,7 +39,7 @@ public abstract class NewDay implements CreditCard {
     @SuppressWarnings("unused") // accessed via reflection
     public static final String[] requiredCredentials = new String[] {"username", "password", "passcode"};
 
-    public NewDay(char[][] credentials, YAMM yamm) throws RemoteException {
+    public NewDay(char[][] credentials, YAMM yamm) throws HttpException {
         this.username = Arrays.copyOf(credentials[0], credentials[0].length);
         this.password = Arrays.copyOf(credentials[1], credentials[1].length);
         this.passcode = Arrays.copyOf(credentials[2], credentials[2].length);
@@ -54,7 +54,7 @@ public abstract class NewDay implements CreditCard {
                   Statement[] statements,
                   Transaction[] transactions,
                   UUID uuid,
-                  YAMM yamm) throws RemoteException {
+                  YAMM yamm) throws HttpException {
         this.username = Arrays.copyOf(credentials[0], credentials[0].length);
         this.password = Arrays.copyOf(credentials[1], credentials[1].length);
         this.passcode = Arrays.copyOf(credentials[2], credentials[2].length);
@@ -81,7 +81,42 @@ public abstract class NewDay implements CreditCard {
 
     protected abstract String getSlug();
 
-    private void authenticate() throws RemoteException {
+    private void authenticate() throws HttpException {
+        // check username looks sensible (minimum length 6)
+        if (username.length < 6) {
+            throw new InvalidCredentialsException("Invalid username (6 characters required)");
+        }
+
+        // check password looks sensible (minimum length 6)
+        if (password.length < 6) {
+            throw new InvalidCredentialsException("Invalid password (6 characters required)");
+        }
+
+        // check passcode looks sensible (length 6, all digits)
+        {
+            boolean failed = false;
+
+            // check length
+            if (passcode.length != 6) {
+                failed = true;
+            }
+
+            // check each character is a digit
+            if (!failed) {
+                for (int i = 0; i < 6; i++) {
+                    if (!Character.isDigit(passcode[i])) {
+                        failed = true;
+                        break;
+                    }
+                }
+            }
+
+            // show error if required
+            if (failed) {
+                throw new InvalidCredentialsException("Invalid passcode (6 digits required)");
+            }
+        }
+
         try {
             // perform preauth w/ username and password
             JSONObject preauth = Unirest
@@ -91,8 +126,14 @@ public abstract class NewDay implements CreditCard {
                     .getBody()
                     .getObject();
             if (preauth.has("errors")) {
-                throw new RemoteException(
-                        preauth.getJSONArray("errors").getJSONObject(0).getString("message"));
+                String errorMessage = preauth.getJSONArray("errors").getJSONObject(0).getString("message");
+                if (errorMessage.equals("Please enter a valid username and password.")) {
+                    throw new InvalidCredentialsException("Invalid username and / or password");
+                } else if (errorMessage.startsWith("Account is locked.")) {
+                    throw new InvalidCredentialsException("Account is locked; please visit online servicing to unlock the account");
+                } else {
+                    throw new HttpException(errorMessage);
+                }
             }
 
             // determine requested passcode digits
@@ -115,28 +156,32 @@ public abstract class NewDay implements CreditCard {
                     .asJson();
             JSONObject fullAuthBody = fullAuth.getBody().getObject();
             if (fullAuthBody.has("errors")) {
-                throw new RemoteException(
-                        fullAuthBody.getJSONArray("errors").getJSONObject(0).getString("message"));
+                String errorMessage = fullAuthBody.getJSONArray("errors").getJSONObject(0).getString("message");
+                if (errorMessage.equals("Please enter a valid passcode.")) {
+                    throw new InvalidCredentialsException("Invalid passcode");
+                } else {
+                    throw new HttpException(errorMessage);
+                }
             }
         } catch (UnirestException e) {
             // TODO: handle this better (connection timeouts etc.)
-            throw new RemoteException("UnirestException", e);
+            throw new HttpException("UnirestException", e);
         }
     }
 
-    private JSONObject callEndpoint(String endpoint) throws RemoteException {
+    private JSONObject callEndpoint(String endpoint) throws HttpException {
         return callEndpoint(endpoint, null, true);
     }
 
-    private JSONObject callEndpoint(String endpoint, String body) throws RemoteException {
+    private JSONObject callEndpoint(String endpoint, String body) throws HttpException {
         return callEndpoint(endpoint, body, true);
     }
 
-    private JSONObject callEndpoint(String endpoint, JSONObject body) throws RemoteException {
+    private JSONObject callEndpoint(String endpoint, JSONObject body) throws HttpException {
         return callEndpoint(endpoint, body.toString(), true);
     }
 
-    private JSONObject callEndpoint(String endpoint, String body, boolean attemptReauthentication) throws RemoteException {
+    private JSONObject callEndpoint(String endpoint, String body, boolean attemptReauthentication) throws HttpException {
         try {
             // perform an appropriate HTTP request
             HttpResponse<JsonNode> request;
@@ -164,7 +209,7 @@ public abstract class NewDay implements CreditCard {
 
             // handle errors
             if (request.getStatus() != 200) {
-                throw new RemoteException("NewDay API failure: status code " + request.getStatus() + " for endpoint " +
+                throw new HttpException("NewDay API failure: status code " + request.getStatus() + " for endpoint " +
                         "https://portal.newdaycards.com/accounts/services/rest/" + endpoint + ".");
             }
 
@@ -178,7 +223,7 @@ public abstract class NewDay implements CreditCard {
                     authenticate();
                     return callEndpoint(endpoint, body, false);
                 } else {
-                    throw new RemoteException(
+                    throw new HttpException(
                             json.getJSONArray("errors").getJSONObject(0).getString("message"));
                 }
             } else {
@@ -187,11 +232,11 @@ public abstract class NewDay implements CreditCard {
             }
         } catch (UnirestException e) {
             // TODO: handle this better (connection timeouts etc.)
-            throw new RemoteException("UnirestException", e);
+            throw new HttpException("UnirestException", e);
         }
     }
 
-    private void callAccountSummaryEndpoint() throws RemoteException {
+    private void callAccountSummaryEndpoint() throws HttpException {
         JSONObject json = callEndpoint("getAccountSummaryData");
 
         // set available to spend
@@ -216,21 +261,21 @@ public abstract class NewDay implements CreditCard {
                     new SimpleDateFormat("dd/MM/yyyy").parse(
                             json.getJSONObject("accountSummary").getString("nextStatementDt")));
         } catch (ParseException e) {
-            throw new RemoteException("Error parsing next statement date provided by account summary endpoint!", e);
+            throw new HttpException("Error parsing next statement date provided by account summary endpoint!", e);
         }
 
         // set nickname
         nickname = json.getJSONObject("accountSummary").getString("productName");
     }
 
-    private void callStatementsEndpoint() throws RemoteException {
+    private void callStatementsEndpoint() throws HttpException {
         // there isn't actually a single endpoint which gets statements, but for simplicity we'll pretend there is
         // get the dates of the available statements
         JSONArray statementDatesJSON;
         try {
             statementDatesJSON = callEndpoint("/v1/getStatementDates", "{}")
                     .getJSONArray("statementDates");
-        } catch (RemoteException e) {
+        } catch (HttpException e) {
             if (e.getMessage().equals("No statements are found for the input account. ")) {
                 this.statements = new CachedValue<>(new LinkedHashMap<>());
                 return;
@@ -247,7 +292,7 @@ public abstract class NewDay implements CreditCard {
                         statementDatesJSON.getJSONObject(i).getString("stmtDate")));
             }
         } catch (ParseException e) {
-            throw new RemoteException("Error parsing statement date provided by statement date endpoint!", e);
+            throw new HttpException("Error parsing statement date provided by statement date endpoint!", e);
         }
 
         // get a working copy of the statements we already have
@@ -305,7 +350,7 @@ public abstract class NewDay implements CreditCard {
             try {
                 issued = new SimpleDateFormat("dd/MM/yyyy").parse(statementJSON.getString("stmtDate"));
             } catch (ParseException e) {
-                throw new RemoteException("Error parsing statement issued date provided by statement summary endpoint!", e);
+                throw new HttpException("Error parsing statement issued date provided by statement summary endpoint!", e);
             }
 
             // set due date
@@ -313,7 +358,7 @@ public abstract class NewDay implements CreditCard {
             try {
                 due = new SimpleDateFormat("dd/MM/yyyy").parse(statementJSON.getString("paymentDueDate"));
             } catch (ParseException e) {
-                throw new RemoteException("Error parsing statement due date provided by statement summary endpoint!", e);
+                throw new HttpException("Error parsing statement due date provided by statement summary endpoint!", e);
             }
 
             // add statement to statements
@@ -329,7 +374,7 @@ public abstract class NewDay implements CreditCard {
         this.statements = new CachedValue<>(statements);
     }
 
-    public Long getAvailableToSpend() throws RemoteException {
+    public Long getAvailableToSpend() throws HttpException {
         try {
             // cache for 5 minutes
             if (ChronoUnit.SECONDS.between(availableToSpend.updated, ZonedDateTime.now()) < 300) {
@@ -344,7 +389,7 @@ public abstract class NewDay implements CreditCard {
         }
     }
 
-    public Long getBalance() throws RemoteException {
+    public Long getBalance() throws HttpException {
         try {
             // cache for 5 minutes
             if (ChronoUnit.SECONDS.between(balance.updated, ZonedDateTime.now()) < 300) {
@@ -364,7 +409,7 @@ public abstract class NewDay implements CreditCard {
         return new char[][] {username, password, passcode};
     }
 
-    public Long getCreditLimit() throws RemoteException {
+    public Long getCreditLimit() throws HttpException {
         try {
             // cache for 1 hour
             if (ChronoUnit.SECONDS.between(creditLimit.updated, ZonedDateTime.now()) < 3600) {
@@ -401,7 +446,7 @@ public abstract class NewDay implements CreditCard {
         return decimalFormatPattern;
     }
 
-    public Date getNextStatementDate() throws RemoteException {
+    public Date getNextStatementDate() throws HttpException {
         try {
             // cache for 12 hours
             if (ChronoUnit.SECONDS.between(nextStatementDate.updated, ZonedDateTime.now()) < 43200) {
@@ -416,14 +461,14 @@ public abstract class NewDay implements CreditCard {
         }
     }
 
-    public String getNickname() throws RemoteException {
+    public String getNickname() throws HttpException {
         if (nickname == null) {
             callAccountSummaryEndpoint();
         }
         return nickname;
     }
 
-    public Statement[] getStatements() throws RemoteException {
+    public Statement[] getStatements() throws HttpException {
         try {
             // cache for 1 hour
             if (ChronoUnit.SECONDS.between(transactions.updated, ZonedDateTime.now()) < 3600) {
@@ -438,7 +483,7 @@ public abstract class NewDay implements CreditCard {
         }
     }
 
-    public Transaction[] getTransactions() throws RemoteException {
+    public Transaction[] getTransactions() throws HttpException {
         try {
             // cache for 5 minutes
             if (ChronoUnit.SECONDS.between(transactions.updated, ZonedDateTime.now()) < 300) {
@@ -455,7 +500,7 @@ public abstract class NewDay implements CreditCard {
         }
     }
 
-    private void getTransactionsByStatement(int statementIndex, UUID statementId) throws RemoteException {
+    private void getTransactionsByStatement(int statementIndex, UUID statementId) throws HttpException {
         TransactionStore transactions;
         try {
             transactions = this.transactions.value;
@@ -505,7 +550,7 @@ public abstract class NewDay implements CreditCard {
         this.transactions = new CachedValue<>(transactions);
     }
 
-    private void getTransactionsByStatements() throws RemoteException {
+    private void getTransactionsByStatements() throws HttpException {
         callStatementsEndpoint(); // make sure our statements are up-to-date (override cache)
         Object[] statementIds = statements.value.keySet().toArray();
 
@@ -536,7 +581,7 @@ public abstract class NewDay implements CreditCard {
         }
     }
 
-    private void getTransactionsCurrent() throws RemoteException {
+    private void getTransactionsCurrent() throws HttpException {
         TransactionStore transactions;
         try {
             transactions = this.transactions.value;
@@ -616,23 +661,17 @@ public abstract class NewDay implements CreditCard {
         );
 
         // for foreign transactions
+        // TODO: actually handle this
         Long localAmount = null;
         Currency localCurrency = null;
 
-        // constants (for now!)
-        Long balance = 0L;
-        Counterparty counterparty = null;
-        DeclineReason declineReason = null;
-        TransactionCategory category = TransactionCategory.GENERAL;
-        TransactionType type = TransactionType.UNKNOWN;
-
         return new Transaction(
                 amount,
-                balance,
-                category,
-                counterparty,
+                0L, // TODO: consider setting this (or deprecating balance)
+                TransactionCategory.GENERAL, // TODO: set this (at least in a basic way - transactions / payments)
+                null, // TODO: set this (at least in a basic way)
                 created,
-                declineReason,
+                null, // TODO: work out how declines work (if they're shown - I doubt it!)
                 description,
                 id,
                 localAmount,
@@ -641,7 +680,7 @@ public abstract class NewDay implements CreditCard {
                 providerId,
                 settled,
                 null, // we have no way of knowing the statementId here
-                type
+                TransactionType.UNKNOWN // TODO: set this (at least in a basic way - transactions / payments)
         );
     }
 

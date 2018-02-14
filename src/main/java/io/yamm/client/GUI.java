@@ -130,7 +130,7 @@ class GUI implements UserInterface,Runnable {
         return f.getSelectedFile().toString();
     }
 
-    public char[] requestCharArray(String message) {
+    public char[] requestCharArray(String message) throws NullPointerException {
         JLabel passwordLabel = new JLabel("<html><p style='width:240px'>" + message + "</p></html>");
         JPasswordField password = new JPasswordField();
         password.addActionListener(new AbstractAction() {
@@ -154,18 +154,14 @@ class GUI implements UserInterface,Runnable {
         if (result == 0) { // OK
             return password.getPassword();
         } else if (result == 1) { // cancel
-            return null;
+            throw new NullPointerException();
         } else { // closed
             if (password.getEchoChar() == 'Y') { // if we closed due to enter, return the password
                 return password.getPassword();
             } else {
-                return null;
+                throw new NullPointerException();
             }
         }
-    }
-
-    public String requestString(String message) {
-        return JOptionPane.showInputDialog("<html><p style='width:240px'>" + message + "</p></html>");
     }
 
     public void showError(String message) {

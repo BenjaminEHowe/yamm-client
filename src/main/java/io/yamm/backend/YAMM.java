@@ -1,6 +1,7 @@
 package io.yamm.backend;
 
 import com.mashape.unirest.http.Unirest;
+import org.apache.http.auth.InvalidCredentialsException;
 
 import java.lang.reflect.InvocationTargetException;
 import java.security.SecureRandom;
@@ -37,20 +38,16 @@ public class YAMM {
                 // if not from the class, from the superclass
                 requiredCredentials = (String[]) provider.getSuperclass().getDeclaredField("requiredCredentials").get(null);
             }
-        } catch (IllegalAccessException|NoSuchFieldException e) {
+        } catch (IllegalAccessException | NoSuchFieldException e) {
             ui.showException(e);
             return null;
         }
 
         // ask the user for each credential
         char[][] credentials = new char[requiredCredentials.length][];
-        try {
-            for (int i = 0; i < requiredCredentials.length; i++) {
-                credentials[i] = ui.requestCharArray(
-                        "Please enter your " + name + " " + requiredCredentials[i] + ":");
-            }
-        } catch (NullPointerException e) {
-            throw new CancellationException();
+        for (int i = 0; i < requiredCredentials.length; i++) {
+            credentials[i] = ui.requestCharArray(
+                    "Please enter your " + name + " " + requiredCredentials[i] + ":");
         }
 
         // try to instantiate the object & add it to the accounts list
@@ -60,9 +57,15 @@ public class YAMM {
             UUID accountID = account.getUUID();
             accounts.put(accountID, account);
             return accountID;
+        } catch (InvocationTargetException e) {
+            // if invalid credentials were supplied, tell the web server
+            if (e.getCause() instanceof InvalidCredentialsException) {
+                throw (InvalidCredentialsException) e.getCause();
+            } else {
+                throw new Exception("Error instantiating account!", e);
+            }
         } catch (InstantiationException|
                 IllegalAccessException|
-                InvocationTargetException|
                 NoSuchMethodException|
                 NullPointerException e) {
             throw new Exception("Error instantiating account!", e);

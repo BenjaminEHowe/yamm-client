@@ -3,8 +3,8 @@ package io.yamm.backend.providers;
 import io.yamm.backend.Statement;
 import io.yamm.backend.Transaction;
 import io.yamm.backend.YAMM;
+import org.apache.http.HttpException;
 
-import java.rmi.RemoteException;
 import java.util.Currency;
 import java.util.UUID;
 
@@ -12,7 +12,7 @@ import java.util.UUID;
 public class NewDay_MissSelfridge extends NewDay {
     public static final String name = "Miss Selfridge Account Card";
 
-    public NewDay_MissSelfridge(char[][] credentials, YAMM yamm) throws RemoteException {
+    public NewDay_MissSelfridge(char[][] credentials, YAMM yamm) throws HttpException {
         super(credentials, yamm);
     }
 
@@ -22,7 +22,7 @@ public class NewDay_MissSelfridge extends NewDay {
                                 Statement[] statements,
                                 Transaction[] transactions,
                                 UUID uuid,
-                                YAMM yamm) throws RemoteException {
+                                YAMM yamm) throws HttpException {
         super(credentials, currency, nickname, statements, transactions, uuid, yamm);
     }
 
