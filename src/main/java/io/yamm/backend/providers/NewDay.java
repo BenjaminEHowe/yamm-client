@@ -159,6 +159,8 @@ public abstract class NewDay implements CreditCard {
                 String errorMessage = fullAuthBody.getJSONArray("errors").getJSONObject(0).getString("message");
                 if (errorMessage.equals("Please enter a valid passcode.")) {
                     throw new InvalidCredentialsException("Invalid passcode");
+                } else if (errorMessage.startsWith("Account is locked.")) {
+                    throw new InvalidCredentialsException("Account is locked; please visit online servicing to unlock the account");
                 } else {
                     throw new HttpException(errorMessage);
                 }
@@ -661,17 +663,21 @@ public abstract class NewDay implements CreditCard {
         );
 
         // for foreign transactions
-        // TODO: actually handle this
         Long localAmount = null;
         Currency localCurrency = null;
+
+        // constants (for now!)
+        Counterparty counterparty = null;
+        DeclineReason declineReason = null;
+        TransactionType type = TransactionType.UNKNOWN;
 
         return new Transaction(
                 amount,
                 0L, // TODO: consider setting this (or deprecating balance)
-                TransactionCategory.GENERAL, // TODO: set this (at least in a basic way - transactions / payments)
-                null, // TODO: set this (at least in a basic way)
+                TransactionCategory.GENERAL,
+                counterparty,
                 created,
-                null, // TODO: work out how declines work (if they're shown - I doubt it!)
+                declineReason,
                 description,
                 id,
                 localAmount,
@@ -680,7 +686,7 @@ public abstract class NewDay implements CreditCard {
                 providerId,
                 settled,
                 null, // we have no way of knowing the statementId here
-                TransactionType.UNKNOWN // TODO: set this (at least in a basic way - transactions / payments)
+                type
         );
     }
 
