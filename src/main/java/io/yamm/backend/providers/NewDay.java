@@ -665,6 +665,21 @@ public abstract class NewDay implements CreditCard {
         // for foreign transactions
         Long localAmount = null;
         Currency localCurrency = null;
+        String foreignCurrencyStr = json.getString("foreignTxnCurrency");
+        if (!foreignCurrencyStr.equals("")) {
+            localCurrency = Currency.getInstance(foreignCurrencyStr);
+            int decimalPlaces = localCurrency.getDefaultFractionDigits();
+            if (decimalPlaces != 0) {
+                StringBuilder patternBuilder = new StringBuilder("0.");
+                for (int j = 0; j < decimalPlaces; j++) {
+                    patternBuilder.append("0");
+                }
+                localAmount = Math.abs(new Long(new DecimalFormat(patternBuilder.toString()).format(
+                        json.getBigDecimal("foreignTxnAmnt")).replace(".", "")));
+            } else {
+                localAmount = Math.abs(json.getLong("foreignTxnAmnt"));
+            }
+        }
 
         // constants (for now!)
         Counterparty counterparty = null;
