@@ -167,6 +167,11 @@ public class Starling implements BankAccount {
         for (int i = jsonTransactions.length() - 1; i >= 0; --i) {
             JSONObject jsonTransaction = jsonTransactions.getJSONObject(i);
 
+            // skip over invalid Settle Up transactions until we know what to do with them: see https://github.com/BenjaminEHowe/yamm-client/issues/10
+            if (!jsonTransaction.has("source")) {
+                continue;
+            }
+
             // try to find an existing transaction
             String providerId = jsonTransaction.getString("id");
             UUID id = transactionRefs.get(providerId);
