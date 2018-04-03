@@ -3,7 +3,7 @@ package io.yamm.backend.providers;
 import io.yamm.backend.Statement;
 import io.yamm.backend.Transaction;
 import io.yamm.backend.YAMM;
-import org.apache.http.HttpException;
+import io.yamm.backend.YAMMRuntimeException;
 
 import java.util.Currency;
 import java.util.UUID;
@@ -12,7 +12,7 @@ import java.util.UUID;
 public class NewDay_Topshop extends NewDay {
     public static final String name = "Topshop Card";
 
-    public NewDay_Topshop(char[][] credentials, YAMM yamm) throws HttpException {
+    public NewDay_Topshop(char[][] credentials, YAMM yamm) throws YAMMRuntimeException {
         super(credentials, yamm);
     }
 
@@ -22,7 +22,7 @@ public class NewDay_Topshop extends NewDay {
                           Statement[] statements,
                           Transaction[] transactions,
                           UUID uuid,
-                          YAMM yamm) throws HttpException {
+                          YAMM yamm) throws YAMMRuntimeException {
         super(credentials, currency, nickname, statements, transactions, uuid, yamm);
     }
 

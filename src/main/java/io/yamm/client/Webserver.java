@@ -4,6 +4,7 @@ import fi.iki.elonen.NanoHTTPD;
 import io.yamm.backend.Account;
 import io.yamm.backend.UserInterface;
 import io.yamm.backend.YAMM;
+import io.yamm.backend.YAMMRuntimeException;
 import org.apache.http.HttpException;
 import org.apache.http.auth.InvalidCredentialsException;
 import org.json.JSONArray;
@@ -50,6 +51,13 @@ class Webserver extends NanoHTTPD {
         JSONObject json = new JSONObject();
         String[] URIParts = session.getUri().substring(1).split("/");
 
+        // handle all OPTIONS requests, even without a valid key
+        if (session.getMethod() == Method.OPTIONS) {
+            Response response = newFixedLengthResponse(Response.Status.NO_CONTENT, "", null);
+            response.addHeader("Access-Control-Max-Age", "7200"); // cache for 2 hours
+            return CORSify(session, response);
+        }
+
         // check session ID
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -88,15 +96,6 @@ class Webserver extends NanoHTTPD {
                     json.toString()));
         }
 
-        // handle all OPTIONS requests here, as opposed to per-endpoint
-        if (session.getMethod() == Method.OPTIONS) {
-            Response response = newFixedLengthResponse(Response.Status.OK, "", null);
-            response.addHeader("Access-Control-Allow-Headers", "content-type");
-            response.addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-            response.addHeader("Access-Control-Max-Age", "7200"); // cache for 2 hours
-            return CORSify(session, response);
-        }
-
         // do something!
         switch (URIParts[1]) {
             case "accounts":
@@ -117,7 +116,7 @@ class Webserver extends NanoHTTPD {
                                     return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
                                             "application/json",
                                             json.toString()));
-                                } catch (HttpException e) {
+                                } catch (YAMMRuntimeException e) {
                                     yamm.raiseException(e);
                                     return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
                                             "application/json",
@@ -140,7 +139,7 @@ class Webserver extends NanoHTTPD {
                                     return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
                                             "application/json",
                                             json.toString()));
-                                } catch (HttpException e) {
+                                } catch (YAMMRuntimeException e) {
                                     yamm.raiseException(e);
                                     return CORSify(session, newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
                                             "application/json",
@@ -181,7 +180,7 @@ class Webserver extends NanoHTTPD {
                                 return CORSify(session, newFixedLengthResponse(Response.Status.OK,
                                         "application/json",
                                         accounts.toString()));
-                            } catch (HttpException e) {
+                            } catch (YAMMRuntimeException e) {
                                 yamm.raiseException(e);
                                 return CORSify(session, newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
                                         "application/json",
@@ -270,7 +269,7 @@ class Webserver extends NanoHTTPD {
                                         transactions.put(transaction);
                                     }
 
-                                } catch (HttpException e) {
+                                } catch (YAMMRuntimeException e) {
                                     yamm.raiseException(e);
                                     return CORSify(session, newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
                                             "application/json",
@@ -305,9 +304,13 @@ class Webserver extends NanoHTTPD {
 
     private Response CORSify(IHTTPSession session, Response response) {
         String origin = session.getHeaders().get("origin");
-        if (origin != null && origin.endsWith("yamm.io")) {
-            response.addHeader("Access-Control-Allow-Origin", origin);
-        }
+        //if (origin != null && origin.endsWith("yamm.io")) {
+            response.addHeader("Access-Control-Expose-Headers", "Content-Length,Content-Range");
+            response.addHeader("Access-Control-Allow-Headers", "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range-type");
+            response.addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+        //    response.addHeader("Access-Control-Allow-Origin", origin);
+            response.addHeader("Access-Control-Allow-Origin", "*");
+        //}
         response.addHeader("Vary", "Origin");
         return response;
     }

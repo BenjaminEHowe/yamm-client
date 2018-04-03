@@ -6,11 +6,11 @@ import java.util.Currency;
 import java.util.UUID;
 
 public interface Account {
-    Long getAvailableToSpend() throws HttpException;
-    Long getBalance() throws HttpException;
-    Currency getCurrency() throws HttpException;
-    String getNickname() throws HttpException;
-    Transaction[] getTransactions() throws HttpException;
+    Long getAvailableToSpend() throws YAMMRuntimeException;
+    Long getBalance() throws YAMMRuntimeException;
+    Currency getCurrency() throws YAMMRuntimeException;
+    String getNickname() throws YAMMRuntimeException;
+    Transaction[] getTransactions() throws YAMMRuntimeException;
     UUID getUUID();
     void overwriteSensitiveData();
     void setNickname(String newNickname);

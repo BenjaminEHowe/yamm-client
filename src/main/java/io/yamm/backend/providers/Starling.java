@@ -5,8 +5,6 @@ import com.mashape.unirest.http.JsonNode;
 import com.mashape.unirest.http.Unirest;
 import com.mashape.unirest.http.exceptions.UnirestException;
 import io.yamm.backend.*;
-import org.apache.http.HttpException;
-import org.apache.http.auth.InvalidCredentialsException;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -40,20 +38,20 @@ public class Starling implements BankAccount {
     public static final String name = "Starling Bank";
     public static final String[] requiredCredentials = new String[] {"personal access token"};
 
-    public Starling(char[][] credentials, YAMM yamm) throws HttpException {
+    public Starling(char[][] credentials, YAMM yamm) throws YAMMRuntimeException {
         accessToken = Arrays.copyOf(credentials[0], credentials[0].length);
         uuid = UUID.randomUUID();
         this.yamm = yamm;
         try {
             callAccountEndpoint();
-        } catch (HttpException e) {
+        } catch (YAMMRuntimeException e) {
             String pattern = "Starling API failure: status code (\\d{3})";
             Pattern r = Pattern.compile(pattern);
             Matcher m = r.matcher(e.getMessage());
             if (m.find()) {
                 int statusCode = Integer.parseInt(m.group(1));
                 if (statusCode == 403) { // token was invalid
-                    throw new InvalidCredentialsException("Invalid personal access token");
+                    throw new YAMMRuntimeException("Invalid personal access token");
                 }
             }
 
@@ -92,7 +90,7 @@ public class Starling implements BankAccount {
                 Instant.ofEpochSecond(0).atZone(ZoneId.of("UTC")));
     }
 
-    private void callAccountEndpoint() throws HttpException {
+    private void callAccountEndpoint() throws YAMMRuntimeException {
         JSONObject json = callEndpoint("v1/accounts").getBody().getObject();
         nickname = json.getString("name");
         accountNumber = json.getString("accountNumber");
@@ -101,7 +99,7 @@ public class Starling implements BankAccount {
         bic = json.getString("bic");
     }
 
-    private void callBalanceEndpoint() throws HttpException {
+    private void callBalanceEndpoint() throws YAMMRuntimeException {
         JSONObject json = callEndpoint("v1/accounts/balance").getBody().getObject();
 
         // set currency
@@ -118,7 +116,7 @@ public class Starling implements BankAccount {
                         json.getBigDecimal("clearedBalance")).replace(".", "")));
     }
 
-    private HttpResponse<JsonNode> callEndpoint(String endpoint) throws HttpException {
+    private HttpResponse<JsonNode> callEndpoint(String endpoint) throws YAMMRuntimeException {
         // make request
         HttpResponse<JsonNode> json;
         try {
@@ -127,19 +125,19 @@ public class Starling implements BankAccount {
                     .asJson();
         } catch (UnirestException e) {
             // TODO: handle this better (connection timeouts etc.)
-            throw new HttpException("UnirestException", e);
+            throw new YAMMRuntimeException("UnirestException", e);
         }
 
         // check status was 200 OK
         if (json.getStatus() == 200) {
             return json;
         } else {
-            throw new HttpException("Starling API failure: status code " + json.getStatus() + " for endpoint " +
+            throw new YAMMRuntimeException("Starling API failure: status code " + json.getStatus() + " for endpoint " +
                     "https://api.starlingbank.com/api/" + endpoint + ".");
         }
     }
 
-    private void callTransactionEndpoint() throws HttpException {
+    private void callTransactionEndpoint() throws YAMMRuntimeException {
         try {
             // TODO: improve this to handle transactions which take a while to settle
             Transaction newestTransaction = transactions.value.entrySet().iterator().next().getValue();
@@ -150,7 +148,7 @@ public class Starling implements BankAccount {
         }
     }
 
-    private void callTransactionEndpoint(ZonedDateTime from, ZonedDateTime to) throws HttpException {
+    private void callTransactionEndpoint(ZonedDateTime from, ZonedDateTime to) throws YAMMRuntimeException {
         String fromStr = from.getYear() + "-" + String.format("%02d", from.getMonthValue()) + "-" + String.format("%02d", from.getDayOfMonth());
         String toStr = to.getYear() + "-" + String.format("%02d", to.getMonthValue()) + "-" + String.format("%02d", to.getDayOfMonth());
         JSONObject json = callEndpoint("v1/transactions?from=" + fromStr + "&to=" + toStr).getBody().getObject();
@@ -326,49 +324,6 @@ public class Starling implements BankAccount {
                                 website
                         );
                     }
-
-                    // category
-                    if (cardJSON.has("spendingCategory")) {
-                        switch(cardJSON.getString("spendingCategory")) {
-                            case "BILLS_AND_SERVICES":
-                                category = TransactionCategory.BILLS_AND_SERVICES;
-                                break;
-                            case "EATING_OUT":
-                                category = TransactionCategory.EATING_OUT;
-                                break;
-                            case "ENTERTAINMENT":
-                                category = TransactionCategory.ENTERTAINMENT;
-                                break;
-                            case "EXPENSES":
-                                category = TransactionCategory.EXPENSES;
-                                break;
-                            case "GENERAL":
-                                category = TransactionCategory.GENERAL;
-                                break;
-                            case "GROCERIES":
-                                category = TransactionCategory.GROCERIES;
-                                break;
-                            case "SHOPPING":
-                                category = TransactionCategory.SHOPPING;
-                                break;
-                            case "HOLIDAYS":
-                                category = TransactionCategory.ENTERTAINMENT;
-                                break;
-                            case "PAYMENTS":
-                                category = TransactionCategory.GENERAL;
-                                break;
-                            case "TRANSPORT":
-                                category = TransactionCategory.TRANSPORT;
-                                break;
-                            case "LIFESTYLE":
-                                category = TransactionCategory.ENTERTAINMENT;
-                                break;
-                            case "NONE":
-                                category = TransactionCategory.GENERAL;
-                                break;
-                        }
-                    }
-
                     break;
 
                 case "FASTER_PAYMENTS_IN":
@@ -393,6 +348,7 @@ public class Starling implements BankAccount {
 
                 case "INTEREST_PAYMENT":
                     type = TransactionType.INTEREST;
+                    category = TransactionCategory.INTEREST;
                     settled = created; // settles instantly
                     break;
 
@@ -407,6 +363,7 @@ public class Starling implements BankAccount {
                     break;
             }
 
+            // instantiate the transaction
             Transaction transaction = new Transaction(
                     amount,
                     balance,
@@ -424,6 +381,11 @@ public class Starling implements BankAccount {
                     null,
                     type
             );
+
+            // enrich the transaction
+            transaction = Enricher.categorise(transaction);
+
+            // store the transaction
             transactions.put(transaction.id, transaction);
             transactionRefs.put(transaction.providerId, transaction.id);
         }
@@ -435,7 +397,7 @@ public class Starling implements BankAccount {
         return accountNumber;
     }
 
-    public Long getAvailableToSpend() throws HttpException {
+    public Long getAvailableToSpend() throws YAMMRuntimeException {
         try {
             // cache for 60 seconds
             if (ChronoUnit.SECONDS.between(availableToSpend.updated, ZonedDateTime.now()) < 60) {
@@ -450,7 +412,7 @@ public class Starling implements BankAccount {
         }
     }
 
-    public Long getBalance() throws HttpException {
+    public Long getBalance() throws YAMMRuntimeException {
         try {
             // cache for 60 seconds
             if (ChronoUnit.SECONDS.between(balance.updated, ZonedDateTime.now()) < 60) {
@@ -473,7 +435,7 @@ public class Starling implements BankAccount {
         return new char[][] {accessToken};
     }
 
-    public Currency getCurrency() throws HttpException {
+    public Currency getCurrency() throws YAMMRuntimeException {
         try {
             return currency;
         } catch (NullPointerException e) {
@@ -494,7 +456,7 @@ public class Starling implements BankAccount {
         return sortCode;
     }
 
-    public Transaction[] getTransactions() throws HttpException {
+    public Transaction[] getTransactions() throws YAMMRuntimeException {
         try {
             // cache for 60 seconds
             if (ChronoUnit.SECONDS.between(transactions.updated, ZonedDateTime.now()) < 60) {

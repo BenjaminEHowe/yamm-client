@@ -139,7 +139,7 @@ class DataHandler {
         }
     }
 
-    static JSONObject accountToJSON(Account account) throws HttpException {
+    static JSONObject accountToJSON(Account account) throws YAMMRuntimeException {
         JSONObject json = new JSONObject();
 
         json.put("id", account.getUUID());
@@ -163,7 +163,7 @@ class DataHandler {
         return json;
     }
 
-    static JSONArray accountsToJSON(Map<UUID, Account> accounts) throws HttpException {
+    static JSONArray accountsToJSON(Map<UUID, Account> accounts) throws YAMMRuntimeException {
         JSONArray json = new JSONArray();
         for (Map.Entry<UUID, Account> account : accounts.entrySet()) {
             json.put(accountToJSON(account.getValue()));
@@ -664,7 +664,7 @@ class DataHandler {
             } catch (IllegalAccessException|
                     InvocationTargetException|
                     NoSuchMethodException|
-                    HttpException e) {
+                    YAMMRuntimeException e) {
                 yamm.raiseException(e);
             }
         }

@@ -5,12 +5,16 @@ import com.mashape.unirest.http.JsonNode;
 import com.mashape.unirest.http.Unirest;
 import com.mashape.unirest.http.exceptions.UnirestException;
 import io.yamm.backend.*;
-import org.apache.http.HttpException;
-import org.apache.http.auth.InvalidCredentialsException;
+import org.apache.http.HttpHeaders;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpHead;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.IOException;
 import java.text.DecimalFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -30,6 +34,7 @@ public abstract class NewDay implements CreditCard {
     private String nickname;
     private char[] passcode;
     private char[] password;
+    private String portalUrl;
     private CachedValue<LinkedHashMap<UUID, Statement>, ZonedDateTime> statements;
     private CachedValue<TransactionStore, ZonedDateTime> transactions;
     private char[] username;
@@ -39,12 +44,13 @@ public abstract class NewDay implements CreditCard {
     @SuppressWarnings("unused") // accessed via reflection
     public static final String[] requiredCredentials = new String[] {"username", "password", "passcode"};
 
-    public NewDay(char[][] credentials, YAMM yamm) throws HttpException {
+    public NewDay(char[][] credentials, YAMM yamm) throws YAMMRuntimeException {
         this.username = Arrays.copyOf(credentials[0], credentials[0].length);
         this.password = Arrays.copyOf(credentials[1], credentials[1].length);
         this.passcode = Arrays.copyOf(credentials[2], credentials[2].length);
         this.uuid = UUID.randomUUID();
         this.yamm = yamm;
+        discoverPortalUrl();
         authenticate();
     }
 
@@ -54,7 +60,7 @@ public abstract class NewDay implements CreditCard {
                   Statement[] statements,
                   Transaction[] transactions,
                   UUID uuid,
-                  YAMM yamm) throws HttpException {
+                  YAMM yamm) throws YAMMRuntimeException {
         this.username = Arrays.copyOf(credentials[0], credentials[0].length);
         this.password = Arrays.copyOf(credentials[1], credentials[1].length);
         this.passcode = Arrays.copyOf(credentials[2], credentials[2].length);
@@ -76,20 +82,21 @@ public abstract class NewDay implements CreditCard {
         this.uuid = uuid;
         this.yamm = yamm;
 
+        discoverPortalUrl();
         authenticate();
     }
 
     protected abstract String getSlug();
 
-    private void authenticate() throws HttpException {
+    private void authenticate() throws YAMMRuntimeException {
         // check username looks sensible (minimum length 6)
         if (username.length < 6) {
-            throw new InvalidCredentialsException("Invalid username (6 characters required)");
+            throw new YAMMRuntimeException("Invalid username (6 characters required)");
         }
 
         // check password looks sensible (minimum length 6)
         if (password.length < 6) {
-            throw new InvalidCredentialsException("Invalid password (6 characters required)");
+            throw new YAMMRuntimeException("Invalid password (6 characters required)");
         }
 
         // check passcode looks sensible (length 6, all digits)
@@ -113,14 +120,14 @@ public abstract class NewDay implements CreditCard {
 
             // show error if required
             if (failed) {
-                throw new InvalidCredentialsException("Invalid passcode (6 digits required)");
+                throw new YAMMRuntimeException("Invalid passcode (6 digits required)");
             }
         }
 
         try {
             // perform preauth w/ username and password
             JSONObject preauth = Unirest
-                    .post("https://portal.newdaycards.com/accounts/services/rest/login/preauth?portalName=" + getSlug())
+                    .post("https://" + portalUrl + "/accounts/services/rest/login/preauth?portalName=" + getSlug())
                     .body("{\"userId\":\"" + new String(username) + "\",\"passwd\":\"" + new String(password) + "\"}")
                     .asJson()
                     .getBody()
@@ -128,11 +135,11 @@ public abstract class NewDay implements CreditCard {
             if (preauth.has("errors")) {
                 String errorMessage = preauth.getJSONArray("errors").getJSONObject(0).getString("message");
                 if (errorMessage.equals("Please enter a valid username and password.")) {
-                    throw new InvalidCredentialsException("Invalid username and / or password");
+                    throw new YAMMRuntimeException("Invalid username and / or password");
                 } else if (errorMessage.startsWith("Account is locked.")) {
-                    throw new InvalidCredentialsException("Account is locked; please visit online servicing to unlock the account");
+                    throw new YAMMRuntimeException("Account is locked; please visit online servicing to unlock the account");
                 } else {
-                    throw new HttpException(errorMessage);
+                    throw new YAMMRuntimeException(errorMessage);
                 }
             }
 
@@ -149,7 +156,7 @@ public abstract class NewDay implements CreditCard {
 
             // perform auth w/ requested passcode digits
             HttpResponse<JsonNode> fullAuth = Unirest
-                    .post("https://portal.newdaycards.com/accounts/j_spring_security_check")
+                    .post("https://" + portalUrl + "/accounts/j_spring_security_check")
                     .header("accept", "application/json")
                     .field("j_password", new String(requestedPasscodeDigits))
                     .field("portalName", getSlug())
@@ -158,40 +165,40 @@ public abstract class NewDay implements CreditCard {
             if (fullAuthBody.has("errors")) {
                 String errorMessage = fullAuthBody.getJSONArray("errors").getJSONObject(0).getString("message");
                 if (errorMessage.equals("Please enter a valid passcode.")) {
-                    throw new InvalidCredentialsException("Invalid passcode");
+                    throw new YAMMRuntimeException("Invalid passcode");
                 } else if (errorMessage.startsWith("Account is locked.")) {
-                    throw new InvalidCredentialsException("Account is locked; please visit online servicing to unlock the account");
+                    throw new YAMMRuntimeException("Account is locked; please visit online servicing to unlock the account");
                 } else {
-                    throw new HttpException(errorMessage);
+                    throw new YAMMRuntimeException(errorMessage);
                 }
             }
         } catch (UnirestException e) {
             // TODO: handle this better (connection timeouts etc.)
-            throw new HttpException("UnirestException", e);
+            throw new YAMMRuntimeException("UnirestException", e);
         }
     }
 
-    private JSONObject callEndpoint(String endpoint) throws HttpException {
+    private JSONObject callEndpoint(String endpoint) throws YAMMRuntimeException {
         return callEndpoint(endpoint, null, true);
     }
 
-    private JSONObject callEndpoint(String endpoint, String body) throws HttpException {
+    private JSONObject callEndpoint(String endpoint, String body) throws YAMMRuntimeException {
         return callEndpoint(endpoint, body, true);
     }
 
-    private JSONObject callEndpoint(String endpoint, JSONObject body) throws HttpException {
+    private JSONObject callEndpoint(String endpoint, JSONObject body) throws YAMMRuntimeException {
         return callEndpoint(endpoint, body.toString(), true);
     }
 
-    private JSONObject callEndpoint(String endpoint, String body, boolean attemptReauthentication) throws HttpException {
+    private JSONObject callEndpoint(String endpoint, String body, boolean attemptReauthentication) throws YAMMRuntimeException {
         try {
             // perform an appropriate HTTP request
             HttpResponse<JsonNode> request;
             if (body == null) {
-                request = Unirest.post("https://portal.newdaycards.com/accounts/services/rest/" + endpoint)
+                request = Unirest.post("https://" + portalUrl + "/accounts/services/rest/" + endpoint)
                         .asJson();
             } else {
-                request = Unirest.post("https://portal.newdaycards.com/accounts/services/rest/" + endpoint)
+                request = Unirest.post("https://" + portalUrl + "/accounts/services/rest/" + endpoint)
                         .body(body)
                         .asJson();
             }
@@ -211,8 +218,8 @@ public abstract class NewDay implements CreditCard {
 
             // handle errors
             if (request.getStatus() != 200) {
-                throw new HttpException("NewDay API failure: status code " + request.getStatus() + " for endpoint " +
-                        "https://portal.newdaycards.com/accounts/services/rest/" + endpoint + ".");
+                throw new YAMMRuntimeException("NewDay API failure: status code " + request.getStatus() + " for endpoint " +
+                        "https://" + portalUrl + "/accounts/services/rest/" + endpoint + ".");
             }
 
             JSONObject json = request.getBody().getObject();
@@ -225,7 +232,7 @@ public abstract class NewDay implements CreditCard {
                     authenticate();
                     return callEndpoint(endpoint, body, false);
                 } else {
-                    throw new HttpException(
+                    throw new YAMMRuntimeException(
                             json.getJSONArray("errors").getJSONObject(0).getString("message"));
                 }
             } else {
@@ -234,11 +241,11 @@ public abstract class NewDay implements CreditCard {
             }
         } catch (UnirestException e) {
             // TODO: handle this better (connection timeouts etc.)
-            throw new HttpException("UnirestException", e);
+            throw new YAMMRuntimeException("UnirestException", e);
         }
     }
 
-    private void callAccountSummaryEndpoint() throws HttpException {
+    private void callAccountSummaryEndpoint() throws YAMMRuntimeException {
         JSONObject json = callEndpoint("getAccountSummaryData");
 
         // set available to spend
@@ -263,21 +270,21 @@ public abstract class NewDay implements CreditCard {
                     new SimpleDateFormat("dd/MM/yyyy").parse(
                             json.getJSONObject("accountSummary").getString("nextStatementDt")));
         } catch (ParseException e) {
-            throw new HttpException("Error parsing next statement date provided by account summary endpoint!", e);
+            throw new YAMMRuntimeException("Error parsing next statement date provided by account summary endpoint!", e);
         }
 
         // set nickname
         nickname = json.getJSONObject("accountSummary").getString("productName");
     }
 
-    private void callStatementsEndpoint() throws HttpException {
+    private void callStatementsEndpoint() throws YAMMRuntimeException {
         // there isn't actually a single endpoint which gets statements, but for simplicity we'll pretend there is
         // get the dates of the available statements
         JSONArray statementDatesJSON;
         try {
             statementDatesJSON = callEndpoint("/v1/getStatementDates", "{}")
                     .getJSONArray("statementDates");
-        } catch (HttpException e) {
+        } catch (YAMMRuntimeException e) {
             if (e.getMessage().equals("No statements are found for the input account. ")) {
                 this.statements = new CachedValue<>(new LinkedHashMap<>());
                 return;
@@ -294,7 +301,7 @@ public abstract class NewDay implements CreditCard {
                         statementDatesJSON.getJSONObject(i).getString("stmtDate")));
             }
         } catch (ParseException e) {
-            throw new HttpException("Error parsing statement date provided by statement date endpoint!", e);
+            throw new YAMMRuntimeException("Error parsing statement date provided by statement date endpoint!", e);
         }
 
         // get a working copy of the statements we already have
@@ -352,7 +359,7 @@ public abstract class NewDay implements CreditCard {
             try {
                 issued = new SimpleDateFormat("dd/MM/yyyy").parse(statementJSON.getString("stmtDate"));
             } catch (ParseException e) {
-                throw new HttpException("Error parsing statement issued date provided by statement summary endpoint!", e);
+                throw new YAMMRuntimeException("Error parsing statement issued date provided by statement summary endpoint!", e);
             }
 
             // set due date
@@ -360,7 +367,7 @@ public abstract class NewDay implements CreditCard {
             try {
                 due = new SimpleDateFormat("dd/MM/yyyy").parse(statementJSON.getString("paymentDueDate"));
             } catch (ParseException e) {
-                throw new HttpException("Error parsing statement due date provided by statement summary endpoint!", e);
+                throw new YAMMRuntimeException("Error parsing statement due date provided by statement summary endpoint!", e);
             }
 
             // add statement to statements
@@ -376,7 +383,30 @@ public abstract class NewDay implements CreditCard {
         this.statements = new CachedValue<>(statements);
     }
 
-    public Long getAvailableToSpend() throws HttpException {
+    private void discoverPortalUrl() throws YAMMRuntimeException {
+        CloseableHttpClient client = HttpClientBuilder.create().disableRedirectHandling().build();
+        HttpHead request = null;
+        try {
+            // try the default portal URL
+            String url = "https://portal.newdaycards.com/accounts/" + getSlug() + "/login";
+            request = new HttpHead(url);
+            CloseableHttpResponse httpResponse = client.execute(request);
+            int statusCode = httpResponse.getStatusLine().getStatusCode();
+            // if we were redirected, find out where
+            if (statusCode >= 300 && statusCode < 400) {
+                url = httpResponse.getHeaders(HttpHeaders.LOCATION)[0].getValue();
+            }
+            portalUrl = url.split("/")[2];
+        } catch (IllegalArgumentException | IOException e) {
+            throw new YAMMRuntimeException("Failed to discover portal URL", e);
+        } finally {
+            if (request != null) {
+                request.releaseConnection();
+            }
+        }
+    }
+
+    public Long getAvailableToSpend() throws YAMMRuntimeException {
         try {
             // cache for 5 minutes
             if (ChronoUnit.SECONDS.between(availableToSpend.updated, ZonedDateTime.now()) < 300) {
@@ -391,7 +421,7 @@ public abstract class NewDay implements CreditCard {
         }
     }
 
-    public Long getBalance() throws HttpException {
+    public Long getBalance() throws YAMMRuntimeException {
         try {
             // cache for 5 minutes
             if (ChronoUnit.SECONDS.between(balance.updated, ZonedDateTime.now()) < 300) {
@@ -411,7 +441,7 @@ public abstract class NewDay implements CreditCard {
         return new char[][] {username, password, passcode};
     }
 
-    public Long getCreditLimit() throws HttpException {
+    public Long getCreditLimit() throws YAMMRuntimeException {
         try {
             // cache for 1 hour
             if (ChronoUnit.SECONDS.between(creditLimit.updated, ZonedDateTime.now()) < 3600) {
@@ -448,7 +478,7 @@ public abstract class NewDay implements CreditCard {
         return decimalFormatPattern;
     }
 
-    public Date getNextStatementDate() throws HttpException {
+    public Date getNextStatementDate() throws YAMMRuntimeException {
         try {
             // cache for 12 hours
             if (ChronoUnit.SECONDS.between(nextStatementDate.updated, ZonedDateTime.now()) < 43200) {
@@ -463,14 +493,14 @@ public abstract class NewDay implements CreditCard {
         }
     }
 
-    public String getNickname() throws HttpException {
+    public String getNickname() throws YAMMRuntimeException {
         if (nickname == null) {
             callAccountSummaryEndpoint();
         }
         return nickname;
     }
 
-    public Statement[] getStatements() throws HttpException {
+    public Statement[] getStatements() throws YAMMRuntimeException {
         try {
             // cache for 1 hour
             if (ChronoUnit.SECONDS.between(transactions.updated, ZonedDateTime.now()) < 3600) {
@@ -485,7 +515,7 @@ public abstract class NewDay implements CreditCard {
         }
     }
 
-    public Transaction[] getTransactions() throws HttpException {
+    public Transaction[] getTransactions() throws YAMMRuntimeException {
         try {
             // cache for 5 minutes
             if (ChronoUnit.SECONDS.between(transactions.updated, ZonedDateTime.now()) < 300) {
@@ -502,7 +532,7 @@ public abstract class NewDay implements CreditCard {
         }
     }
 
-    private void getTransactionsByStatement(int statementIndex, UUID statementId) throws HttpException {
+    private void getTransactionsByStatement(int statementIndex, UUID statementId) throws YAMMRuntimeException {
         TransactionStore transactions;
         try {
             transactions = this.transactions.value;
@@ -552,7 +582,7 @@ public abstract class NewDay implements CreditCard {
         this.transactions = new CachedValue<>(transactions);
     }
 
-    private void getTransactionsByStatements() throws HttpException {
+    private void getTransactionsByStatements() throws YAMMRuntimeException {
         callStatementsEndpoint(); // make sure our statements are up-to-date (override cache)
         Object[] statementIds = statements.value.keySet().toArray();
 
@@ -583,7 +613,7 @@ public abstract class NewDay implements CreditCard {
         }
     }
 
-    private void getTransactionsCurrent() throws HttpException {
+    private void getTransactionsCurrent() throws YAMMRuntimeException {
         TransactionStore transactions;
         try {
             transactions = this.transactions.value;
@@ -686,7 +716,8 @@ public abstract class NewDay implements CreditCard {
         DeclineReason declineReason = null;
         TransactionType type = TransactionType.UNKNOWN;
 
-        return new Transaction(
+        // instantiate the transaction
+        Transaction transaction = new Transaction(
                 amount,
                 0L, // TODO: consider setting this (or deprecating balance)
                 TransactionCategory.GENERAL,
@@ -703,6 +734,11 @@ public abstract class NewDay implements CreditCard {
                 null, // we have no way of knowing the statementId here
                 type
         );
+
+        // enrich the transaction
+        transaction = Enricher.categorise(transaction);
+
+        return transaction;
     }
 
     public void overwriteSensitiveData() {

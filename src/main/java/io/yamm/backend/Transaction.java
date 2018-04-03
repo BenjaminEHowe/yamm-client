@@ -7,7 +7,7 @@ import java.util.UUID;
 public class Transaction {
     public final Long amount;
     public final Long balance;
-    public final TransactionCategory category;
+    public TransactionCategory category;
     public final Counterparty counterparty;
     public final ZonedDateTime created;
     public final DeclineReason declineReason;
