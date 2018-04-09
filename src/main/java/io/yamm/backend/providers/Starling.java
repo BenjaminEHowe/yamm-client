@@ -199,18 +199,22 @@ public class Starling implements BankAccount {
             switch (jsonTransaction.getString("source")) {
                 case "DIRECT_CREDIT":
                     type = TransactionType.BACS;
+                    settled = created; // settles instantly
                     break;
 
                 case "DIRECT_DEBIT":
                     type = TransactionType.DIRECT_DEBIT;
+                    settled = created; // settles instantly
                     break;
 
                 case "DIRECT_DEBIT_DISPUTE":
                     type = TransactionType.DIRECT_DEBIT;
+                    settled = created; // settles instantly
                     break;
 
                 case "INTERNAL_TRANSFER":
                     type = TransactionType.TRANSFER;
+                    settled = created; // settles instantly
                     break;
 
                 case "MASTER_CARD":
