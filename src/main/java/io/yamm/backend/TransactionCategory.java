@@ -10,9 +10,9 @@ public enum TransactionCategory {
     GROCERIES,
     HEALTH_AND_BEAUTY,
     INCOME,
-    INTEREST,
+    INTEREST_AND_CHARGES,
+    INTERNAL_TRANSFER,
     PETS,
-    SAVING,
     SHOPPING,
     TRANSPORT,
     UNKNOWN

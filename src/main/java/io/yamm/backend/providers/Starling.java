@@ -348,7 +348,7 @@ public class Starling implements BankAccount {
 
                 case "INTEREST_PAYMENT":
                     type = TransactionType.INTEREST;
-                    category = TransactionCategory.INTEREST;
+                    category = TransactionCategory.INTEREST_AND_CHARGES;
                     settled = created; // settles instantly
                     break;
 
