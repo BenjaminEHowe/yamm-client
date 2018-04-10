@@ -460,6 +460,21 @@ public class Starling implements BankAccount {
         return sortCode;
     }
 
+    public Transaction getTransaction(UUID id) throws YAMMRuntimeException {
+        try {
+            // cache for 60 seconds
+            if (ChronoUnit.SECONDS.between(transactions.updated, ZonedDateTime.now()) < 60) {
+                return transactions.value.get(id);
+            } else {
+                callTransactionEndpoint();
+                return transactions.value.get(id);
+            }
+        } catch (NullPointerException e) {
+            callTransactionEndpoint();
+            return transactions.value.get(id);
+        }
+    }
+
     public Transaction[] getTransactions() throws YAMMRuntimeException {
         try {
             // cache for 60 seconds

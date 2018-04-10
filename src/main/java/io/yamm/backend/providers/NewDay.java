@@ -515,6 +515,23 @@ public abstract class NewDay implements CreditCard {
         }
     }
 
+    public Transaction getTransaction(UUID id) throws YAMMRuntimeException {
+        try {
+            // cache for 5 minutes
+            if (ChronoUnit.SECONDS.between(transactions.updated, ZonedDateTime.now()) < 300) {
+                return transactions.value.get(id);
+            } else {
+                getTransactionsByStatements();
+                getTransactionsCurrent();
+                return transactions.value.get(id);
+            }
+        } catch (NullPointerException e) {
+            getTransactionsByStatements();
+            getTransactionsCurrent();
+            return transactions.value.get(id);
+        }
+    }
+
     public Transaction[] getTransactions() throws YAMMRuntimeException {
         try {
             // cache for 5 minutes

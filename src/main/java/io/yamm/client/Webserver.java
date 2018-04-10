@@ -1,10 +1,7 @@
 package io.yamm.client;
 
 import fi.iki.elonen.NanoHTTPD;
-import io.yamm.backend.Account;
-import io.yamm.backend.UserInterface;
-import io.yamm.backend.YAMM;
-import io.yamm.backend.YAMMRuntimeException;
+import io.yamm.backend.*;
 import org.apache.http.HttpException;
 import org.apache.http.auth.InvalidCredentialsException;
 import org.json.JSONArray;
@@ -105,22 +102,87 @@ class Webserver extends NanoHTTPD {
                     if (URIParts.length > 3) {
                         switch(URIParts[3]) {
                             case "transactions":
-                                try {
-                                    JSONArray transactions = DataHandler.transactionsToJSON(yamm.getAccounts().get(UUID.fromString(URIParts[2])).getTransactions());
-                                    return CORSify(session, newFixedLengthResponse(Response.Status.OK,
-                                            "application/json",
-                                            transactions.toString()));
-                                } catch (NullPointerException e) {
-                                    yamm.raiseException(e);
-                                    json.put("message", "The requested account was not found");
-                                    return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
-                                            "application/json",
-                                            json.toString()));
-                                } catch (YAMMRuntimeException e) {
-                                    yamm.raiseException(e);
-                                    return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
-                                            "application/json",
-                                            json.toString()));
+                                // if a transaction has been specified
+                                if (URIParts.length > 4) {
+                                    switch (session.getMethod()) {
+                                        case GET: // handle requesting a specific transaction
+                                            try {
+                                                UUID uuid = UUID.fromString(URIParts[4]);
+                                                Transaction transaction = yamm.getAccounts().get(UUID.fromString(URIParts[2])).getTransaction(uuid);
+                                                if (transaction != null) {
+                                                    return CORSify(session, newFixedLengthResponse(Response.Status.OK,
+                                                            "application/json",
+                                                            DataHandler.transactionToJSON(transaction).toString()));
+                                                } else {
+                                                    json.put("message", "The requested transaction was not found");
+                                                    return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
+                                                            "application/json",
+                                                            json.toString()));
+                                                }
+                                            } catch (NullPointerException e) {
+                                                json.put("message", "The requested account was not found");
+                                                return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
+                                                        "application/json",
+                                                        json.toString()));
+                                            } catch (YAMMRuntimeException e) {
+                                                yamm.raiseException(e);
+                                                return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
+                                                        "application/json",
+                                                        json.toString()));
+                                            }
+
+
+                                        case PATCH: // handle updating a transaction
+                                            Integer contentLength = Integer.parseInt(session.getHeaders().get("content-length"));
+                                            byte[] buffer = new byte[contentLength];
+                                            try {
+                                                //noinspection ResultOfMethodCallIgnored
+                                                session.getInputStream().read(buffer, 0, contentLength);
+                                                JSONObject patchJSON = new JSONObject(new String(buffer));
+                                                // only supported patch is a new category
+                                                if (patchJSON.keySet().size() == 1 && patchJSON.has("category")) {
+                                                    UUID uuid = UUID.fromString(URIParts[4]);
+                                                    TransactionCategory category = TransactionCategory.valueOf(patchJSON.getString("category"));
+                                                    Transaction transaction = yamm.getAccounts().get(UUID.fromString(URIParts[2])).getTransaction(uuid);
+                                                    transaction.category = category;
+                                                    return CORSify(session, NoContent());
+                                                } else {
+                                                    return CORSify(session, BadRequest());
+                                                }
+                                            } catch (IllegalArgumentException e) {
+                                                json.put("message", "Illegal category");
+                                                return CORSify(session, newFixedLengthResponse(Response.Status.BAD_REQUEST,
+                                                        "application/json",
+                                                        json.toString()));
+                                            } catch (IOException | YAMMRuntimeException e) {
+                                                yamm.raiseException(e);
+                                                return CORSify(session, newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
+                                                        "application/json",
+                                                        json.toString()));
+                                            }
+
+                                        default:
+                                            return CORSify(session, MethodNotAllowed());
+                                    }
+
+                                } else {
+                                    try {
+                                        JSONArray transactions = DataHandler.transactionsToJSON(yamm.getAccounts().get(UUID.fromString(URIParts[2])).getTransactions());
+                                        return CORSify(session, newFixedLengthResponse(Response.Status.OK,
+                                                "application/json",
+                                                transactions.toString()));
+                                    } catch (NullPointerException e) {
+                                        yamm.raiseException(e);
+                                        json.put("message", "The requested account was not found");
+                                        return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
+                                                "application/json",
+                                                json.toString()));
+                                    } catch (YAMMRuntimeException e) {
+                                        yamm.raiseException(e);
+                                        return CORSify(session, newFixedLengthResponse(Response.Status.NOT_FOUND,
+                                                "application/json",
+                                                json.toString()));
+                                    }
                                 }
 
                             default:
@@ -166,7 +228,6 @@ class Webserver extends NanoHTTPD {
                                             "application/json",
                                             json.toString()));
                                 }
-
 
                             default:
                                 return CORSify(session, MethodNotAllowed());

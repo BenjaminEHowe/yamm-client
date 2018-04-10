@@ -10,6 +10,7 @@ public interface Account {
     Long getBalance() throws YAMMRuntimeException;
     Currency getCurrency() throws YAMMRuntimeException;
     String getNickname() throws YAMMRuntimeException;
+    Transaction getTransaction(UUID id) throws YAMMRuntimeException;
     Transaction[] getTransactions() throws YAMMRuntimeException;
     UUID getUUID();
     void overwriteSensitiveData();
