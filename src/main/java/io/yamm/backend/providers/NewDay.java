@@ -755,6 +755,15 @@ public abstract class NewDay implements CreditCard {
         // enrich the transaction
         transaction = Enricher.categorise(transaction);
 
+        // catch bits which the enricher will miss
+        if (transaction.mcc.equals("0")) { // newday use MCC 0 for internal things, like payments, interest, and loyalty awards
+            if (transaction.description.equals("INTEREST")) {
+                transaction.category = TransactionCategory.INTEREST_AND_CHARGES;
+            } else {
+                transaction.category = TransactionCategory.GENERAL;
+            }
+        }
+
         return transaction;
     }
 
