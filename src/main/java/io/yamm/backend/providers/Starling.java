@@ -212,8 +212,29 @@ public class Starling implements BankAccount {
                     settled = created; // settles instantly
                     break;
 
+                case "FASTER_PAYMENTS_IN":
+                    type = TransactionType.FASTER_PAYMENT;
+                    settled = created; // settles instantly
+                    break;
+
+                case "FASTER_PAYMENTS_OUT":
+                    type = TransactionType.FASTER_PAYMENT;
+                    settled = created; // settles instantly
+                    break;
+
+                case "FASTER_PAYMENTS_REVERSAL":
+                    type = TransactionType.FASTER_PAYMENT;
+                    settled = created; // settles instantly
+                    break;
+
                 case "INTERNAL_TRANSFER":
                     type = TransactionType.TRANSFER;
+                    settled = created; // settles instantly
+                    break;
+
+                case "INTEREST_PAYMENT":
+                    type = TransactionType.INTEREST;
+                    category = TransactionCategory.INTEREST_AND_CHARGES;
                     settled = created; // settles instantly
                     break;
 
@@ -330,38 +351,22 @@ public class Starling implements BankAccount {
                     }
                     break;
 
-                case "FASTER_PAYMENTS_IN":
-                    type = TransactionType.FASTER_PAYMENT;
-                    settled = created; // settles instantly
-                    break;
-
-                case "FASTER_PAYMENTS_OUT":
-                    type = TransactionType.FASTER_PAYMENT;
-                    settled = created; // settles instantly
-                    break;
-
-                case "FASTER_PAYMENTS_REVERSAL":
-                    type = TransactionType.FASTER_PAYMENT;
-                    settled = created; // settles instantly
-                    break;
-
-                case "STRIPE_FUNDING":
-                    type = TransactionType.PAYMENT;
-                    settled = created; // settles instantly
-                    break;
-
-                case "INTEREST_PAYMENT":
-                    type = TransactionType.INTEREST;
-                    category = TransactionCategory.INTEREST_AND_CHARGES;
-                    settled = created; // settles instantly
-                    break;
-
                 case "NOSTRO_DEPOSIT":
-                    type = TransactionType.SWIFT;
+                    if (jsonTransaction.getString("narrative").equals("Cash Deposit")) {
+                        type = TransactionType.CARD_CASH;
+                    } else {
+                        type = TransactionType.SWIFT;
+                    }
                     settled = created; // settles instantly
                     break;
 
                 case "OVERDRAFT":
+                    type = TransactionType.TRANSFER;
+                    settled = created; // settles instantly
+                    break;
+
+                case "SETTLE_UP":
+                case "STRIPE_FUNDING":
                     type = TransactionType.TRANSFER;
                     settled = created; // settles instantly
                     break;
