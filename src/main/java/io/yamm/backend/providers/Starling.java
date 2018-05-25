@@ -23,15 +23,15 @@ import java.util.regex.Pattern;
 public class Starling implements BankAccount {
     private char[] accessToken;
     private String accountNumber;
-    private CachedValue<Long, ZonedDateTime> availableToSpend;
-    private CachedValue<Long, ZonedDateTime> balance;
+    private CachedValue<Long> availableToSpend;
+    private CachedValue<Long> balance;
     private String bic;
     private Currency currency;
     private String iban;
     private String nickname = "";
     private String sortCode;
     private Map<String, UUID> transactionRefs = new HashMap<>();
-    private CachedValue<LinkedHashMap<UUID, Transaction>, ZonedDateTime> transactions;
+    private CachedValue<LinkedHashMap<UUID, Transaction>> transactions;
     private final UUID uuid;
     private YAMM yamm;
 

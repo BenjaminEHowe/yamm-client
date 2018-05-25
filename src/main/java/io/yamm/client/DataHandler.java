@@ -155,7 +155,6 @@ class DataHandler {
             json.put("iban", ((BankAccount) account).getIBAN());
             json.put("sortCode", ((BankAccount) account).getSortCode());
         } else if (account instanceof CreditCard) {
-            json.put("statements", statementsToJSON(((CreditCard) account).getStatements()));
             json.put("nextStatement", ((CreditCard) account).getNextStatementDate());
             json.put("creditLimit", ((CreditCard) account).getCreditLimit());
         }
@@ -316,19 +315,10 @@ class DataHandler {
                             uuid,
                             yamm);
         } else if (CreditCard.class.isAssignableFrom(provider)) {
-            // credit card statements
-            JSONArray statementsJSON = json.getJSONArray("statements");
-            Statement[] statements = new Statement[statementsJSON.length()];
-            // iterate over transactions backwards
-            for (int i = 0; i < statements.length; i++) {
-                statements[i] = JSONToStatement(statementsJSON.getJSONObject(i));
-            }
-
             return (Account) provider.getConstructor(
                     char[][].class,
                     Currency.class,
                     String.class,
-                    Statement[].class,
                     Transaction[].class,
                     UUID.class,
                     YAMM.class)
@@ -336,7 +326,6 @@ class DataHandler {
                             credentials,
                             currency,
                             nickname,
-                            statements,
                             transactions,
                             uuid,
                             yamm
@@ -471,18 +460,6 @@ class DataHandler {
             name,
             sortCode,
             website
-        );
-    }
-
-    private Statement JSONToStatement(JSONObject json) throws ParseException {
-        SimpleDateFormat simpleDateFormat = new SimpleDateFormat("EEE MMM d HH:mm:ss zzz yyyy");
-        return new Statement(
-                json.getLong("balance"),
-                simpleDateFormat.parse(json.getString("due")),
-                UUID.fromString(json.getString("id")),
-                simpleDateFormat.parse(json.getString("issued")),
-                json.getLong("minimumPayment"),
-                json.getLong("previousBalance")
         );
     }
 
@@ -690,40 +667,6 @@ class DataHandler {
                 }
             }
         }
-    }
-
-    static JSONObject statementToJSON(Statement statement) {
-        JSONObject json = new JSONObject();
-
-        if (statement.balance != null) {
-            json.put("balance", statement.balance);
-        }
-        if (statement.due != null) {
-            json.put("due", statement.due);
-        }
-        if (statement.id != null) {
-            json.put("id", statement.id);
-        }
-        if (statement.issued != null) {
-            json.put("issued", statement.issued);
-        }
-        if (statement.minimumPayment != null) {
-            json.put("minimumPayment", statement.minimumPayment);
-        }
-        if (statement.previousBalance != null) {
-            json.put("previousBalance", statement.previousBalance);
-        }
-
-        return json;
-    }
-
-    static JSONArray statementsToJSON(Statement[] statements) {
-        Collections.reverse(Arrays.asList(statements)); // so the newest transaction is first
-        JSONArray json = new JSONArray();
-        for (Statement statement : statements) {
-            json.put(statementToJSON(statement));
-        }
-        return json;
     }
 
     static JSONObject transactionToJSON(Transaction transaction) {

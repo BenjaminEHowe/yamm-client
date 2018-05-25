@@ -2,6 +2,11 @@ package io.yamm.backend;
 
 import com.mashape.unirest.http.Unirest;
 import org.apache.http.auth.InvalidCredentialsException;
+import org.apache.http.client.config.CookieSpecs;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.cookie.Cookie;
+import org.apache.http.impl.client.BasicCookieStore;
+import org.apache.http.impl.client.HttpClients;
 
 import java.lang.reflect.InvocationTargetException;
 import java.security.SecureRandom;
@@ -10,12 +15,18 @@ import java.util.concurrent.CancellationException;
 
 public class YAMM {
     private Map<UUID, Account> accounts  = new HashMap<>();
+    private final BasicCookieStore cookieStore = new BasicCookieStore();
     private Random random = new SecureRandom();
     private final UserInterface ui;
 
     public YAMM(UserInterface ui) {
         this.ui = ui;
         Unirest.setDefaultHeader("User-Agent", "YAMMBot/" + getVersion() + "; +https://yamm.io/bot");
+        Unirest.setHttpClient(HttpClients.custom().
+                setDefaultCookieStore(cookieStore)
+                .setDefaultRequestConfig(RequestConfig.custom()
+                        .setCookieSpec(CookieSpecs.STANDARD).build())
+                .build());
     }
 
     public void addAccount(Account account) {
@@ -87,6 +98,37 @@ public class YAMM {
 
     public Map<UUID, Account> getAccounts() {
         return accounts;
+    }
+
+    private List<Cookie> getCookie(String domain) {
+        List<Cookie> cookies = new ArrayList<>();
+        for (Cookie cookie: cookieStore.getCookies()) {
+            if (cookie.getDomain().equals(domain)) {
+                cookies.add(cookie);
+            }
+        }
+        return cookies;
+    }
+
+    public String getCookie(String name, String domain) {
+        return getCookie(name, domain, "/");
+    }
+
+    public String getCookie(String name, String domain, String path) {
+        // clear any expired cookies
+        cookieStore.clearExpired(new Date());
+
+        // iterate over the cookieStore, looking for a matching cookie
+        for (Cookie cookie: cookieStore.getCookies()) {
+            if (cookie.getDomain().equals(domain) &&
+                    cookie.getPath().equals(path) &&
+                    cookie.getName().equals(name)) {
+                return cookie.getValue();
+            }
+        }
+
+        // if we get this far, no matching cookie was found :-(
+        return null;
     }
 
     public String getVersion() {

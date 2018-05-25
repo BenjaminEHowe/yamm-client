@@ -1,6 +1,5 @@
 package io.yamm.backend.providers;
 
-import io.yamm.backend.Statement;
 import io.yamm.backend.Transaction;
 import io.yamm.backend.YAMM;
 import io.yamm.backend.YAMMRuntimeException;
@@ -19,11 +18,14 @@ public class NewDay_Amazon extends NewDay {
     public NewDay_Amazon(char[][] credentials,
                        Currency currency,
                        String nickname,
-                       Statement[] statements,
                        Transaction[] transactions,
                        UUID uuid,
                        YAMM yamm) throws YAMMRuntimeException {
-        super(credentials, currency, nickname, statements, transactions, uuid, yamm);
+        super(credentials, currency, nickname, transactions, uuid, yamm);
+    }
+
+    protected String getName() {
+        return "Amazon MasterCard";
     }
 
     protected String getSlug() {

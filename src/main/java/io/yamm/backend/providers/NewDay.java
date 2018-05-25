@@ -1,42 +1,32 @@
 package io.yamm.backend.providers;
 
-import com.mashape.unirest.http.HttpResponse;
-import com.mashape.unirest.http.JsonNode;
 import com.mashape.unirest.http.Unirest;
 import com.mashape.unirest.http.exceptions.UnirestException;
+import com.neovisionaries.i18n.CountryCode;
 import io.yamm.backend.*;
-import org.apache.http.HttpHeaders;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpHead;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClientBuilder;
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
 import java.text.DecimalFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public abstract class NewDay implements CreditCard {
-    private CachedValue<Long, ZonedDateTime> availableToSpend;
-    private CachedValue<Long, ZonedDateTime> balance;
-    private CachedValue<Long, ZonedDateTime> creditLimit;
+    private CachedValue<Long> availableToSpend;
+    private CachedValue<Long> balance;
+    private String bearerToken;
+    private CachedValue<Long> creditLimit;
     private String decimalFormatPattern;
-    private CachedValue<Date, ZonedDateTime> nextStatementDate;
+    private CachedValue<Date> nextStatementDate;
     private String nickname;
     private char[] passcode;
     private char[] password;
-    private String portalUrl;
-    private CachedValue<LinkedHashMap<UUID, Statement>, ZonedDateTime> statements;
-    private CachedValue<TransactionStore, ZonedDateTime> transactions;
+    private CachedValue<TransactionStore> transactions = new CachedValue<>(new TransactionStore(), true);
     private char[] username;
     private final UUID uuid;
     private final YAMM yamm;
@@ -50,14 +40,12 @@ public abstract class NewDay implements CreditCard {
         this.passcode = Arrays.copyOf(credentials[2], credentials[2].length);
         this.uuid = UUID.randomUUID();
         this.yamm = yamm;
-        discoverPortalUrl();
         authenticate();
     }
 
     public NewDay(char[][] credentials,
                   @SuppressWarnings("unused") Currency currency, // TODO: for now, ignore currency (but this should change in the future!)
                   String nickname,
-                  Statement[] statements,
                   Transaction[] transactions,
                   UUID uuid,
                   YAMM yamm) throws YAMMRuntimeException {
@@ -66,12 +54,6 @@ public abstract class NewDay implements CreditCard {
         this.passcode = Arrays.copyOf(credentials[2], credentials[2].length);
 
         this.nickname = nickname;
-
-        LinkedHashMap<UUID, Statement> statementsLinkedHashMap = new LinkedHashMap<>();
-        for (int i = statements.length -1; i >= 0; i--) {
-            statementsLinkedHashMap.put(statements[i].id, statements[i]);
-        }
-        this.statements = new CachedValue<>(statementsLinkedHashMap);
 
         TransactionStore transactionStore = new TransactionStore();
         for (int i = transactions.length - 1; i >= 0; i--) {
@@ -82,21 +64,22 @@ public abstract class NewDay implements CreditCard {
         this.uuid = uuid;
         this.yamm = yamm;
 
-        discoverPortalUrl();
         authenticate();
     }
 
     protected abstract String getSlug();
 
+    protected abstract String getName();
+
     private void authenticate() throws YAMMRuntimeException {
         // check username looks sensible (minimum length 6)
         if (username.length < 6) {
-            throw new YAMMRuntimeException("Invalid username (6 characters required)");
+            throw new YAMMRuntimeException("Invalid username (6 characters or more required)");
         }
 
         // check password looks sensible (minimum length 6)
         if (password.length < 6) {
-            throw new YAMMRuntimeException("Invalid password (6 characters required)");
+            throw new YAMMRuntimeException("Invalid password (6 characters or more required)");
         }
 
         // check passcode looks sensible (length 6, all digits)
@@ -124,140 +107,116 @@ public abstract class NewDay implements CreditCard {
             }
         }
 
+        // get anti forgery cookie
         try {
-            // perform preauth w/ username and password
-            JSONObject preauth = Unirest
-                    .post("https://" + portalUrl + "/accounts/services/rest/login/preauth?portalName=" + getSlug())
-                    .body("{\"userId\":\"" + new String(username) + "\",\"passwd\":\"" + new String(password) + "\"}")
-                    .asJson()
-                    .getBody()
-                    .getObject();
-            if (preauth.has("errors")) {
-                String errorMessage = preauth.getJSONArray("errors").getJSONObject(0).getString("message");
-                if (errorMessage.equals("Please enter a valid username and password.")) {
-                    throw new YAMMRuntimeException("Invalid username and / or password");
-                } else if (errorMessage.startsWith("Account is locked.")) {
-                    throw new YAMMRuntimeException("Account is locked; please visit online servicing to unlock the account");
-                } else {
-                    throw new YAMMRuntimeException(errorMessage);
-                }
-            }
-
-            // determine requested passcode digits
-            JSONArray requestedPasscodeIndexes = preauth.getJSONObject("response").getJSONArray("passcdDigits");
-            char[] requestedPasscodeDigits = new char[requestedPasscodeIndexes.length() * 2 - 1];
-            for (int i = 0; i < requestedPasscodeIndexes.length(); i++) {
-                requestedPasscodeDigits[i * 2] = passcode[(int) requestedPasscodeIndexes.get(i) - 1];
-                // place a bar between each digit
-                if (i != requestedPasscodeIndexes.length() - 1) {
-                    requestedPasscodeDigits[i * 2 + 1] = '|';
-                }
-            }
-
-            // perform auth w/ requested passcode digits
-            HttpResponse<JsonNode> fullAuth = Unirest
-                    .post("https://" + portalUrl + "/accounts/j_spring_security_check")
-                    .header("accept", "application/json")
-                    .field("j_password", new String(requestedPasscodeDigits))
-                    .field("portalName", getSlug())
-                    .asJson();
-            JSONObject fullAuthBody = fullAuth.getBody().getObject();
-            if (fullAuthBody.has("errors")) {
-                String errorMessage = fullAuthBody.getJSONArray("errors").getJSONObject(0).getString("message");
-                if (errorMessage.equals("Please enter a valid passcode.")) {
-                    throw new YAMMRuntimeException("Invalid passcode");
-                } else if (errorMessage.startsWith("Account is locked.")) {
-                    throw new YAMMRuntimeException("Account is locked; please visit online servicing to unlock the account");
-                } else {
-                    throw new YAMMRuntimeException(errorMessage);
-                }
-            }
+            Unirest.get("https://portal.newdaycards.com/" + getSlug() + "/login").asString();
         } catch (UnirestException e) {
             // TODO: handle this better (connection timeouts etc.)
             throw new YAMMRuntimeException("UnirestException", e);
         }
-    }
 
-    private JSONObject callEndpoint(String endpoint) throws YAMMRuntimeException {
-        return callEndpoint(endpoint, null, true);
-    }
+        // build the body for getting the passcode challenge
+        JSONObject getPasscodeChallengeBody = new JSONObject();
+        getPasscodeChallengeBody.put("username", new String(username));
+        getPasscodeChallengeBody.put("password", new String(password));
 
-    private JSONObject callEndpoint(String endpoint, String body) throws YAMMRuntimeException {
-        return callEndpoint(endpoint, body, true);
-    }
-
-    private JSONObject callEndpoint(String endpoint, JSONObject body) throws YAMMRuntimeException {
-        return callEndpoint(endpoint, body.toString(), true);
-    }
-
-    private JSONObject callEndpoint(String endpoint, String body, boolean attemptReauthentication) throws YAMMRuntimeException {
+        // get the passcode challenge
+        JSONObject passcodeChallenge;
         try {
-            // perform an appropriate HTTP request
-            HttpResponse<JsonNode> request;
-            if (body == null) {
-                request = Unirest.post("https://" + portalUrl + "/accounts/services/rest/" + endpoint)
-                        .asJson();
-            } else {
-                request = Unirest.post("https://" + portalUrl + "/accounts/services/rest/" + endpoint)
-                        .body(body)
-                        .asJson();
-            }
-
-            // check portal
-            if (request.getHeaders().getFirst("cookie") != null) {
-                Matcher matcher = Pattern.compile(".*?redirectPortal=(.*?);").
-                        matcher(request.getHeaders().getFirst("cookie") + ";");
-                if (matcher.find()) {
-                    if (!matcher.group(1).equals(getSlug())) {
-                        // if we're somehow on the wrong portal, reauthenticate and try again
-                        authenticate();
-                        return callEndpoint(endpoint, body, false);
-                    }
-                }
-            }
-
-            // handle errors
-            if (request.getStatus() != 200) {
-                throw new YAMMRuntimeException("NewDay API failure: status code " + request.getStatus() + " for endpoint " +
-                        "https://" + portalUrl + "/accounts/services/rest/" + endpoint + ".");
-            }
-
-            JSONObject json = request.getBody().getObject();
-
-            // handle errors in the JSON
-            if (json.getString("status").equals("error")) {
-                // if it looks like we need to reauthenticate and we're allowed to, do it!
-                if (json.getJSONArray("errors").getJSONObject(0).getString("message").equals("") &&
-                        attemptReauthentication) {
-                    authenticate();
-                    return callEndpoint(endpoint, body, false);
-                } else {
-                    throw new YAMMRuntimeException(
-                            json.getJSONArray("errors").getJSONObject(0).getString("message"));
-                }
-            } else {
-                // return the error free JSON
-                return json.getJSONObject("response");
-            }
+            passcodeChallenge = Unirest.post("https://portal.newdaycards.com/authentication/getPasscodeChallenge")
+                    .header("Content-Type", "application/json")
+                    .header("Referer", "https://portal.newdaycards.com/" + getSlug() + "/login")
+                    .header("x-xsrf-token", yamm.getCookie("XSRF-TOKEN", "portal.newdaycards.com"))
+                    .body(getPasscodeChallengeBody)
+                    .asJson()
+                    .getBody()
+                    .getObject();
         } catch (UnirestException e) {
             // TODO: handle this better (connection timeouts etc.)
             throw new YAMMRuntimeException("UnirestException", e);
+        }
+
+        // decode the identity cookie and obtain the bearer token
+        String identityJson;
+        try {
+            identityJson = URLDecoder.decode(yamm.getCookie("Identity.Cookie", "portal.newdaycards.com"), "utf-8");
+        } catch (UnsupportedEncodingException e) {
+            throw new YAMMRuntimeException("utf-8 not supported!");
+        }
+        String partAuthToken = new JSONObject(identityJson).getJSONObject("PartAuthToken").getString("Token");
+
+        // build the passcodeDigits JSON
+        JSONArray passcodeDigits = passcodeChallenge.getJSONObject("challenge").getJSONArray("passcodeDigits");
+        for (int i = 0; i < passcodeDigits.length(); i++) {
+            JSONObject passcodeDigit = passcodeDigits.getJSONObject(i);
+            passcodeDigit.put("digit", Character.getNumericValue(passcode[passcodeDigit.getInt("position")]));
+            passcodeDigits.put(i, passcodeDigit);
+        }
+
+        // build the body for the passcode challenge
+        JSONObject submitPasscodeChallengeBody = new JSONObject();
+        submitPasscodeChallengeBody.put("passcodeDigits", passcodeDigits);
+        submitPasscodeChallengeBody.put("challengeVerificationToken", passcodeChallenge.getString("challengeVerificationToken"));
+        submitPasscodeChallengeBody.put("username", new String(username));
+        submitPasscodeChallengeBody.put("password", new String(password));
+        submitPasscodeChallengeBody.put("rememberMe", false);
+
+        // submit the passcode challenge
+        JSONObject passcodeChallengeResponse;
+        try {
+            passcodeChallengeResponse = Unirest.post("https://portal.newdaycards.com/authentication/submitPasscodeChallenge")
+                    .header("Authorization", "Bearer " + partAuthToken)
+                    .header("Content-Type", "application/json")
+                    .header("Referer", "https://portal.newdaycards.com/" + getSlug() + "/login")
+                    .header("x-xsrf-token", yamm.getCookie("XSRF-TOKEN", "portal.newdaycards.com"))
+                    .body(submitPasscodeChallengeBody)
+                    .asJson()
+                    .getBody()
+                    .getObject();
+        } catch (UnirestException e) {
+            // TODO: handle this better (connection timeouts etc.)
+            throw new YAMMRuntimeException("UnirestException", e);
+        }
+
+        // check for success, store identity token
+        if (passcodeChallengeResponse.has("success") && passcodeChallengeResponse.getBoolean("success")) {
+            try {
+                identityJson = URLDecoder.decode(yamm.getCookie("Identity.Cookie", "portal.newdaycards.com"), "utf-8");
+            } catch (UnsupportedEncodingException e) {
+                throw new YAMMRuntimeException("utf-8 not supported!");
+            }
+            bearerToken = new JSONObject(identityJson).getJSONObject("IdentityToken").getString("Token");
+        } else {
+            throw new YAMMRuntimeException("NewDay authentication failed (stage 2)");
         }
     }
 
     private void callAccountSummaryEndpoint() throws YAMMRuntimeException {
-        JSONObject json = callEndpoint("getAccountSummaryData");
+        reauthenticateIfRequired();
+
+        // fetch data
+        JSONObject json;
+        try {
+            json = Unirest.get("https://portal.newdaycards.com/api/AccountSummary/AccountSummary")
+                    .header("Authorization", "Bearer " + bearerToken)
+                    .header("Referer", "https://portal.newdaycards.com/" + getSlug() + "/login")
+                    .asJson()
+                    .getBody()
+                    .getObject();
+        } catch (UnirestException e) {
+            throw new YAMMRuntimeException("UnirestException", e);
+        }
 
         // set available to spend
         availableToSpend = new CachedValue<>(new Long(new DecimalFormat(getDecimalFormatPattern()).format(
-                json.getJSONObject("accountSummary").getBigDecimal("otb")).replace(".", "")));
+                json.getBigDecimal("availableToSpend")).replace(".", "")));
 
         // set balance
         balance = new CachedValue<>(-1 * new Long(new DecimalFormat(getDecimalFormatPattern()).format(
-                json.getJSONObject("accountSummary").getBigDecimal("currentBalance")).replace(".", "")));
+                json.getBigDecimal("currentBalance")).replace(".", "")));
 
         // set credit limit
-        Long creditLimitMajorUnits = json.getJSONObject("accountSummary").getLong("creditLimit");
+        Long creditLimitMajorUnits = json.getLong("creditLimit");
         StringBuilder creditLimitStr = new StringBuilder(creditLimitMajorUnits.toString());
         for (int i = 0; i < getCurrency().getDefaultFractionDigits(); i++) {
             creditLimitStr.append("0");
@@ -267,143 +226,114 @@ public abstract class NewDay implements CreditCard {
         // set next statement date
         try {
             nextStatementDate = new CachedValue<>(
-                    new SimpleDateFormat("dd/MM/yyyy").parse(
-                            json.getJSONObject("accountSummary").getString("nextStatementDt")));
+                    new SimpleDateFormat("yyyy-MM-dd").parse(
+                            json.getString("nextStatementDate").substring(0, 9)));
         } catch (ParseException e) {
             throw new YAMMRuntimeException("Error parsing next statement date provided by account summary endpoint!", e);
         }
 
         // set nickname
-        nickname = json.getJSONObject("accountSummary").getString("productName");
+        nickname = json.getJSONObject("productDetails").getString("description");
     }
 
-    private void callStatementsEndpoint() throws YAMMRuntimeException {
-        // there isn't actually a single endpoint which gets statements, but for simplicity we'll pretend there is
-        // get the dates of the available statements
-        JSONArray statementDatesJSON;
+    private void callTransactionsEndpoint() throws YAMMRuntimeException {
+        reauthenticateIfRequired();
+
+        // declare a few variables
+        TransactionStore transactionStore = transactions.value;
+        JSONArray json;
+
+        // get data from NewDay
         try {
-            statementDatesJSON = callEndpoint("/v1/getStatementDates", "{}")
-                    .getJSONArray("statementDates");
-        } catch (YAMMRuntimeException e) {
-            if (e.getMessage().equals("No statements are found for the input account. ")) {
-                this.statements = new CachedValue<>(new LinkedHashMap<>());
-                return;
+            json = Unirest.get("https://portal.newdaycards.com/api/statements/01-01-1970/31-12-2099/B/transactions")
+                    .header("Authorization", "Bearer " + bearerToken)
+                    .header("Referer", "https://portal.newdaycards.com/" + getSlug() + "/account-summary")
+                    .asJson()
+                    .getBody()
+                    .getArray();
+        } catch (UnirestException e) {
+            throw new YAMMRuntimeException("UnirestException", e);
+        }
+
+        // instantiate each transaction from JSON, add it to the transaction store
+        for (Object transactionObj : json) {
+            JSONObject transactionJson = (JSONObject) transactionObj;
+
+            // debug
+            System.out.println(transactionJson.getString("description"));
+
+            // skip pending transactions (they have no reference so cannot be tracked)
+            if (transactionJson.getString("category").equals("pending")) {
+                continue;
+            }
+
+            // skip transactions which are already stored
+            if (transactionStore.get(transactionJson.getString("referenceNbr")) != null) {
+                continue;
+            }
+
+            // convert amount, name, country, and created / posted dates
+            long amount = -1 * new Long(new DecimalFormat(getDecimalFormatPattern()).format(
+                    transactionJson.getBigDecimal("amount")).replace(".", ""));
+            String name;
+            CountryCode country = null;
+            if (transactionJson.getString("description").length() == 40) { // if the description is a 40-character Mastercard description
+                name = transactionJson.getString("description").substring(0, 23).trim();
+                country = CountryCode.getByCode(transactionJson.getString("description").substring(37, 40));
+            } else if (transactionJson.getString("description").length() == 39) { // if the description is a 39-character (i.e. US) Mastercard description
+                name = transactionJson.getString("description").substring(0, 23).trim();
+                country = CountryCode.getByCode("USA");
             } else {
-                throw e;
+                name = getName();
             }
+            ZonedDateTime created = ZonedDateTime.parse(transactionJson.getString("effectiveDate"));
+            ZonedDateTime settled = ZonedDateTime.parse(transactionJson.getString("postDate"));
+
+            // instantiate the transaction
+            Transaction transaction = new Transaction(
+                    amount,
+                    0L,
+                    TransactionCategory.UNKNOWN,
+                    new Counterparty(
+                            null,
+                            new Address(
+                                    null,
+                                    null,
+                                    country,
+                                    null,
+                                    null,
+                                    null,
+                                    null,
+                                    null
+                            ),
+                            null,
+                            name,
+                            null,
+                            null
+                    ),
+                    created,
+                    null,
+                    transactionJson.getString("description"),
+                    UUID.randomUUID(),
+                    null,
+                    null,
+                    null,
+                    transactionJson.getString("referenceNbr"),
+                    settled,
+                    null,
+                    TransactionType.UNKNOWN
+            );
+
+            // if the transaction doesn't already exist in the transaction store, add it
+            transactionStore.add(transaction);
         }
 
-        // convert the JSON to an ArrayList, backwards (so the first element of the ArrayList is the oldest date
-        ArrayList<Date> getStatementDates = new ArrayList<>();
-        try {
-            for (int i = statementDatesJSON.length() - 1; i >= 0; i--) {
-                getStatementDates.add(new SimpleDateFormat("dd/MM/yyyy").parse(
-                        statementDatesJSON.getJSONObject(i).getString("stmtDate")));
-            }
-        } catch (ParseException e) {
-            throw new YAMMRuntimeException("Error parsing statement date provided by statement date endpoint!", e);
-        }
+        // set the transaction store
+        transactions = new CachedValue<>(transactionStore);
 
-        // get a working copy of the statements we already have
-        LinkedHashMap<UUID, Statement> statements;
-        try {
-            statements = this.statements.value;
-        } catch (NullPointerException e) {
-            statements = new LinkedHashMap<>();
-        }
-
-        // find the last statement
-        try {
-            Statement lastStatement = null;
-            for (Statement statement : statements.values()) {
-                lastStatement = statement;
-            }
-
-            // don't get details of statements which aren't newer than the last one we have
-            for (int i = 0; i < getStatementDates.size(); i++) {
-                if (!getStatementDates.get(i).after(lastStatement.issued)) {
-                    getStatementDates.remove(i);
-                    i--;
-                }
-            }
-        } catch (NullPointerException e) {
-            // if we don't have any statements yet then get all the statements we can
-        }
-
-        // get details of the new statements
-        for (Date statementDate : getStatementDates) {
-            String statementDateStr = new SimpleDateFormat("dd MMM yyyy").format(statementDate);
-
-            JSONObject statementJSON = callEndpoint(
-                    "v1/getStatementSummaryNew",
-                    "{\"relativeMonthNumber\":0, \"stmtDate\":\"" + statementDateStr + "\"}"
-            ).getJSONObject("statementDetail");
-
-            // set ID
-            UUID id = UUID.randomUUID();
-
-            // set balance
-            Long balance = new Long(new DecimalFormat(getDecimalFormatPattern()).format(
-                    statementJSON.getBigDecimal("stdEndBal")).replace(".", ""));
-
-            // set previous balance
-            Long previousBalance = new Long(new DecimalFormat(getDecimalFormatPattern()).format(
-                    statementJSON.getBigDecimal("stdBegBal")).replace(".", ""));
-
-            // set minimum payment
-            Long minimumPayment = new Long(new DecimalFormat(getDecimalFormatPattern()).format(
-                    statementJSON.getBigDecimal("minimumPayment")).replace(".", ""));
-
-            // set issued date
-            Date issued;
-            try {
-                issued = new SimpleDateFormat("dd/MM/yyyy").parse(statementJSON.getString("stmtDate"));
-            } catch (ParseException e) {
-                throw new YAMMRuntimeException("Error parsing statement issued date provided by statement summary endpoint!", e);
-            }
-
-            // set due date
-            Date due;
-            try {
-                due = new SimpleDateFormat("dd/MM/yyyy").parse(statementJSON.getString("paymentDueDate"));
-            } catch (ParseException e) {
-                throw new YAMMRuntimeException("Error parsing statement due date provided by statement summary endpoint!", e);
-            }
-
-            // add statement to statements
-            statements.put(id, new Statement(balance,
-                    due,
-                    id,
-                    issued,
-                    minimumPayment,
-                    previousBalance));
-        }
-
-        // set global statements (with new updated date)
-        this.statements = new CachedValue<>(statements);
-    }
-
-    private void discoverPortalUrl() throws YAMMRuntimeException {
-        CloseableHttpClient client = HttpClientBuilder.create().disableRedirectHandling().build();
-        HttpHead request = null;
-        try {
-            // try the default portal URL
-            String url = "https://portal.newdaycards.com/accounts/" + getSlug() + "/login";
-            request = new HttpHead(url);
-            CloseableHttpResponse httpResponse = client.execute(request);
-            int statusCode = httpResponse.getStatusLine().getStatusCode();
-            // if we were redirected, find out where
-            if (statusCode >= 300 && statusCode < 400) {
-                url = httpResponse.getHeaders(HttpHeaders.LOCATION)[0].getValue();
-            }
-            portalUrl = url.split("/")[2];
-        } catch (IllegalArgumentException | IOException e) {
-            throw new YAMMRuntimeException("Failed to discover portal URL", e);
-        } finally {
-            if (request != null) {
-                request.releaseConnection();
-            }
-        }
+        // debug
+        System.out.println("First: " + transactions.value.first().description);
+        System.out.println("Last: " + transactions.value.last().description);
     }
 
     public Long getAvailableToSpend() throws YAMMRuntimeException {
@@ -500,34 +430,17 @@ public abstract class NewDay implements CreditCard {
         return nickname;
     }
 
-    public Statement[] getStatements() throws YAMMRuntimeException {
-        try {
-            // cache for 1 hour
-            if (ChronoUnit.SECONDS.between(transactions.updated, ZonedDateTime.now()) < 3600) {
-                return statements.value.values().toArray(new Statement[statements.value.size()]);
-            } else {
-                callStatementsEndpoint();
-                return statements.value.values().toArray(new Statement[statements.value.size()]);
-            }
-        } catch (NullPointerException e) {
-            callStatementsEndpoint();
-            return statements.value.values().toArray(new Statement[statements.value.size()]);
-        }
-    }
-
     public Transaction getTransaction(UUID id) throws YAMMRuntimeException {
         try {
             // cache for 5 minutes
             if (ChronoUnit.SECONDS.between(transactions.updated, ZonedDateTime.now()) < 300) {
                 return transactions.value.get(id);
             } else {
-                getTransactionsByStatements();
-                getTransactionsCurrent();
+                callTransactionsEndpoint();
                 return transactions.value.get(id);
             }
         } catch (NullPointerException e) {
-            getTransactionsByStatements();
-            getTransactionsCurrent();
+            callTransactionsEndpoint();
             return transactions.value.get(id);
         }
     }
@@ -538,239 +451,43 @@ public abstract class NewDay implements CreditCard {
             if (ChronoUnit.SECONDS.between(transactions.updated, ZonedDateTime.now()) < 300) {
                 return transactions.value.toArray();
             } else {
-                getTransactionsByStatements();
-                getTransactionsCurrent();
+                callTransactionsEndpoint();
                 return transactions.value.toArray();
             }
         } catch (NullPointerException e) {
-            getTransactionsByStatements();
-            getTransactionsCurrent();
+            callTransactionsEndpoint();
             return transactions.value.toArray();
         }
-    }
-
-    private void getTransactionsByStatement(int statementIndex, UUID statementId) throws YAMMRuntimeException {
-        TransactionStore transactions;
-        try {
-            transactions = this.transactions.value;
-        } catch (NullPointerException e) {
-            // if we don't have any transactions yet, just create an empty LinkedHashMap
-            transactions = new TransactionStore();
-        }
-
-        JSONObject body = new JSONObject();
-        body.put("detailFlag", "M");
-        body.put("noOfTransaction", 50);
-        body.put("tranStartNum", 0);
-        body.put("tranNbrMonths", statementIndex);
-        JSONObject json = callEndpoint("v1/getTransactions", body);
-
-        JSONArray transactionDetails = json.getJSONArray("transactionDetails");
-        for (int i = 0; i < transactionDetails.length(); i++) {
-            JSONObject transactionJson = transactionDetails.getJSONObject(i);
-
-            // get a transaction object to add a statementId to
-            Transaction transaction = transactions.get(transactionJson.getString("tranRefNo"));
-            if (transaction == null) {
-                transaction = jsonToTransaction(transactionJson);
-            }
-
-            // create a new transaction object with the correct statementId and add it to the transaction store
-            transactions.add(new Transaction(
-                    transaction.amount,
-                    transaction.balance,
-                    transaction.category,
-                    transaction.counterparty,
-                    transaction.created,
-                    transaction.declineReason,
-                    transaction.description,
-                    transaction.id,
-                    transaction.localAmount,
-                    transaction.localCurrency,
-                    transaction.mcc,
-                    transaction.providerId,
-                    transaction.settled,
-                    statementId,
-                    transaction.type
-            ));
-        }
-
-        // update the object's cached transactions
-        this.transactions = new CachedValue<>(transactions);
-    }
-
-    private void getTransactionsByStatements() throws YAMMRuntimeException {
-        callStatementsEndpoint(); // make sure our statements are up-to-date (override cache)
-        Object[] statementIds = statements.value.keySet().toArray();
-
-        // try to find a statement which we already have
-        UUID newestStatementDownloaded = null;
-        try {
-            for (int i = transactions.value.size() - 1; i >= 0; i--) {
-                newestStatementDownloaded = transactions.value.get(i).statementId;
-                if (newestStatementDownloaded != null) {
-                    break;
-                }
-            }
-        } catch (NullPointerException e) { // if the transaction store hasn't been initialised, get all statements
-        }
-
-        int getStatementIndex;
-        if (newestStatementDownloaded == null) { // if we failed
-            getStatementIndex = statementIds.length - 1; // get all the statements available
-        } else { // get all the statements newer than this one
-            getStatementIndex = Arrays.asList(statementIds).indexOf(newestStatementDownloaded) - 1;
-        }
-
-        if (getStatementIndex > 0) { // if there are statements we don't (yet) have
-            for (; getStatementIndex >= 0; getStatementIndex--) {
-                UUID statementId = (UUID) statementIds[statementIds.length - getStatementIndex - 1];
-                getTransactionsByStatement(getStatementIndex, statementId);
-            }
-        }
-    }
-
-    private void getTransactionsCurrent() throws YAMMRuntimeException {
-        TransactionStore transactions;
-        try {
-            transactions = this.transactions.value;
-        } catch (NullPointerException e) {
-            // if we don't have any transactions yet, just create an empty LinkedHashMap
-            transactions = new TransactionStore();
-        }
-
-        JSONObject body = new JSONObject();
-        body.put("detailFlag", "C");
-        body.put("noOfTransaction", 50);
-        body.put("pendingFlag", true); // you would've thought you could set this to "false"... you'd be wrong!
-        body.put("tranStartNum", 0);
-        JSONObject json = callEndpoint("v1/getAllTransactions", body);
-
-        JSONArray transactionDetails = json.getJSONArray("transactionDetails");
-        for (int i = 0; i < transactionDetails.length(); i++) {
-            JSONObject transactionJson = transactionDetails.getJSONObject(i);
-
-            try {
-                Transaction transaction = transactions.get(transactionJson.getString("tranRefNo"));
-                if (transaction == null) { // if the transaction isn't yet in the transaction store
-                    transactions.add(jsonToTransaction(transactionJson)); // add it!
-                }
-            } catch (JSONException e) {
-                // transaction has not yet cleared, so will be ignored
-            }
-        }
-
-        // update the object's cached transactions
-        this.transactions = new CachedValue<>(transactions);
     }
 
     public UUID getUUID() {
         return uuid;
     }
 
-    private Transaction jsonToTransaction(JSONObject json) {
-        // ID stuff
-        UUID id = UUID.randomUUID();
-        String providerId = json.getString("tranRefNo");
-
-        // amount: NewDay reports debits as positive and credits as negative
-        Long amount = -1 * new Long(new DecimalFormat("0.00").format(
-                json.getBigDecimal("amount")).replace(".", ""));
-
-        // created time
-        String[] createdDateParts = json.getString("effectiveDate").split("/");
-        ZonedDateTime created = ZonedDateTime.of(
-                Integer.parseInt(createdDateParts[2]),
-                Integer.parseInt(createdDateParts[1]),
-                Integer.parseInt(createdDateParts[0]),
-                0,
-                0,
-                0,
-                0,
-                ZoneOffset.ofHours(0)
-        );
-
-        // description
-        String description = json.getString("description");
-
-        // mcc
-        String mcc = Integer.toString(json.getInt("mcc"));
-
-        // settled date
-        String[] settledDateParts = json.getString("postedDate").split("/");
-        ZonedDateTime settled = ZonedDateTime.of(
-                Integer.parseInt(settledDateParts[2]),
-                Integer.parseInt(settledDateParts[1]),
-                Integer.parseInt(settledDateParts[0]),
-                0,
-                0,
-                0,
-                0,
-                ZoneOffset.ofHours(0)
-        );
-
-        // for foreign transactions
-        Long localAmount = null;
-        Currency localCurrency = null;
-        String foreignCurrencyStr = json.getString("foreignTxnCurrency");
-        if (!foreignCurrencyStr.equals("")) {
-            localCurrency = Currency.getInstance(foreignCurrencyStr);
-            int decimalPlaces = localCurrency.getDefaultFractionDigits();
-            if (decimalPlaces != 0) {
-                StringBuilder patternBuilder = new StringBuilder("0.");
-                for (int j = 0; j < decimalPlaces; j++) {
-                    patternBuilder.append("0");
-                }
-                localAmount = Math.abs(new Long(new DecimalFormat(patternBuilder.toString()).format(
-                        json.getBigDecimal("foreignTxnAmnt")).replace(".", "")));
-            } else {
-                localAmount = Math.abs(json.getLong("foreignTxnAmnt"));
-            }
-        }
-
-        // constants (for now!)
-        Counterparty counterparty = null;
-        DeclineReason declineReason = null;
-        TransactionType type = TransactionType.UNKNOWN;
-
-        // instantiate the transaction
-        Transaction transaction = new Transaction(
-                amount,
-                0L, // TODO: consider setting this (or deprecating balance)
-                TransactionCategory.GENERAL,
-                counterparty,
-                created,
-                declineReason,
-                description,
-                id,
-                localAmount,
-                localCurrency,
-                mcc,
-                providerId,
-                settled,
-                null, // we have no way of knowing the statementId here
-                type
-        );
-
-        // enrich the transaction
-        transaction = Enricher.categorise(transaction);
-
-        // catch bits which the enricher will miss
-        if (transaction.mcc.equals("0")) { // newday use MCC 0 for internal things, like payments, interest, and loyalty awards
-            if (transaction.description.equals("INTEREST")) {
-                transaction.category = TransactionCategory.INTEREST_AND_CHARGES;
-            } else {
-                transaction.category = TransactionCategory.GENERAL;
-            }
-        }
-
-        return transaction;
-    }
-
     public void overwriteSensitiveData() {
         passcode = yamm.generateSecureRandom(passcode.length);
         password = yamm.generateSecureRandom(password.length);
         username = yamm.generateSecureRandom(username.length);
+    }
+
+    private void reauthenticateIfRequired() throws YAMMRuntimeException {
+        boolean authenticated;
+        try {
+            authenticated = Unirest.get("https://portal.newdaycards.com/authentication/IsAuthenticated")
+                    .header("Authorization", "Bearer " + bearerToken)
+                    .header("Referer", "https://portal.newdaycards.com/" + getSlug() + "/login")
+                    .asJson()
+                    .getBody()
+                    .getObject()
+                    .getBoolean("isAuthenticated");
+        } catch (UnirestException e) {
+            // TODO: handle this better (connection timeouts etc.)
+            throw new YAMMRuntimeException("UnirestException", e);
+        }
+
+        if (!authenticated) {
+            authenticate();
+        }
     }
 
     public void setNickname(String newNickname) {
